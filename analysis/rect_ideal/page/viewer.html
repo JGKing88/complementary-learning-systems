@@ -1,0 +1,2379 @@
+<title>Rectified Ideal Grid</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: control rail on the left, unit grid in the middle, selected unit on the right; stacks on narrow screens. */
+:root {
+  --bg: #f2f4f7;
+  --surface: #ffffff;
+  --surface-2: #e7ebf0;
+  --fg: #151b24;
+  --muted: #5a6475;
+  --line: #d6dbe3;
+  --ink: #1d2533;
+  --ink-fg: #ffffff;
+  --ring: #c77c00;
+  --ok: #136038; --ok-bg: #dcf0e4;
+  --bad: #9f2219; --bad-bg: #f9e0dc;
+  --bar: #2a78d6;
+  --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1217; --surface: #161b22; --surface-2: #1f262f; --fg: #e4e8ee; --muted: #98a2b1; --line: #2a313b;
+    --ink: #e4e8ee; --ink-fg: #10151c; --ring: #f0b54a;
+    --ok: #86d9a9; --ok-bg: #123020; --bad: #ff9d92; --bad-bg: #3b1b17; --bar: #6da7ec;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1217; --surface: #161b22; --surface-2: #1f262f; --fg: #e4e8ee; --muted: #98a2b1; --line: #2a313b;
+  --ink: #e4e8ee; --ink-fg: #10151c; --ring: #f0b54a;
+  --ok: #86d9a9; --ok-bg: #123020; --bad: #ff9d92; --bad-bg: #3b1b17; --bar: #6da7ec;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font); }
+.app {
+  max-width: 1720px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 18px 36px;
+  display: grid; gap: 16px;
+}
+h1 { font-size: 1.35rem; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 1.05rem; font-weight: 600; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.mono { font-family: var(--mono); }
+.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.top .sub { color: var(--muted); }
+.layout { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 760px) {
+  .layout { grid-template-columns: 264px minmax(0, 1fr); }
+  .rail { grid-row: 1 / span 2; }
+}
+@media (min-width: 1240px) {
+  .layout { grid-template-columns: 264px minmax(0, 1fr) 380px; }
+  .rail { grid-row: 1; }
+  .detail { grid-column: 3; grid-row: 1; position: sticky; top: calc(12px + env(safe-area-inset-top, 0px)); }
+}
+.rail { display: grid; gap: 14px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 10px; min-width: 0; }
+.panel > .ptitle { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 500; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.seg button {
+  font: inherit; font-size: 0.86rem; text-align: left; padding: 6px 8px; border-radius: 5px; cursor: pointer;
+  background: var(--surface-2); color: var(--fg); border: 1px solid transparent;
+}
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--ink-fg); }
+.seg button:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.row label, .lbl { font-size: 0.84rem; color: var(--muted); }
+.row .grow { flex: 1; min-width: 0; }
+.out { font-family: var(--mono); font-size: 0.8rem; min-width: 4.5ch; text-align: right; }
+input[type="number"], select {
+  font: inherit; font-size: 0.86rem; padding: 4px 6px; border-radius: 5px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--fg); min-width: 0;
+}
+input[type="number"] { width: 6.5ch; font-family: var(--mono); }
+select { width: 100%; }
+input[type="range"] { width: 100%; accent-color: var(--ring); }
+input[type="checkbox"] { accent-color: var(--ring); }
+.xy { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 6px; align-items: center; }
+.xy input { width: 100%; }
+.hint { font-size: 0.76rem; color: var(--muted); }
+.row.off { opacity: 0.45; }
+canvas.minimap { width: 100%; aspect-ratio: 1; border-radius: 6px; touch-action: none; cursor: crosshair; display: block; }
+button.plain {
+  font: inherit; font-size: 0.84rem; padding: 5px 10px; border-radius: 5px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--fg);
+}
+button.plain:disabled { opacity: 0.45; cursor: not-allowed; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.main { display: grid; gap: 10px; min-width: 0; }
+.pophead { display: grid; gap: 4px; }
+.pophead p { color: var(--muted); max-width: 80ch; }
+.chip { display: inline-block; font-size: 0.74rem; font-family: var(--mono); padding: 1px 7px; border-radius: 4px; vertical-align: 1px; }
+.chip.ok { color: var(--ok); background: var(--ok-bg); }
+.chip.bad { color: var(--bad); background: var(--bad-bg); }
+.chip.wait { color: var(--muted); background: var(--surface-2); }
+#status { font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.2em; }
+#status.err { color: var(--bad); }
+.pager { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.tile {
+  font: inherit; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; text-align: left;
+  display: grid; gap: 3px; min-width: 0; border-radius: 4px;
+}
+.tile canvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 3px; image-rendering: pixelated; outline: 1px solid var(--line); outline-offset: -1px; }
+.tile.sel canvas { outline: 3px solid var(--ring); outline-offset: 1px; }
+.tile .cap { display: flex; justify-content: space-between; gap: 4px; font-family: var(--mono); font-size: 0.68rem; color: var(--muted); min-width: 0; }
+.tile .cap span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .lab { color: var(--fg); }
+.empty { padding: 28px 12px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; }
+.detail { display: grid; gap: 10px; min-width: 0; }
+.dhead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dhead h2 { font-size: 0.98rem; }
+.mapwrap { position: relative; width: 100%; aspect-ratio: 1; }
+.mapwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 4px; }
+#d-canvas { image-rendering: pixelated; cursor: grab; touch-action: none; }
+#d-canvas.dragging { cursor: grabbing; }
+#d-overlay { pointer-events: none; }
+.cbar { display: grid; gap: 2px; }
+.cbar canvas { width: 100%; height: 10px; border-radius: 2px; display: block; image-rendering: auto; }
+.cbar .ticks { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+#d-hover { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); min-height: 1.2em; }
+dl.stats { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 0.84rem; }
+dl.stats dt { color: var(--muted); }
+dl.stats dd { margin: 0; font-family: var(--mono); font-size: 0.8rem; text-align: right; overflow-wrap: anywhere; }
+footer { display: grid; gap: 6px; font-size: 0.8rem; color: var(--muted); }
+footer ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+/* Grid results: f x D heatmap on the left, the selected code's statistics and field-size histogram on the right. */
+.rectsel { display: grid; gap: 6px; }
+.rectsel .row label { min-width: 4.5ch; }
+.resgrid { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1000px) { .resgrid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); } }
+.rescol { display: grid; gap: 10px; min-width: 0; }
+.resctl { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.resctl .row select { width: auto; max-width: 100%; }
+.resctl .seg { min-width: 250px; }
+.heatwrap { overflow-x: auto; }
+table.heat { border-collapse: separate; border-spacing: 2px; font-family: var(--mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+table.heat th { font-weight: 500; color: var(--muted); padding: 4px 8px; text-align: right; white-space: nowrap; font-family: var(--font); font-size: 0.8rem; }
+table.heat td { padding: 0; }
+table.heat .cell { display: block; font: inherit; width: 100%; min-width: 62px; padding: 7px 8px; border: 0; border-radius: 3px; text-align: right; }
+table.heat button.cell { cursor: pointer; }
+table.heat .cell.sel { outline: 2px solid var(--ring); outline-offset: 1px; }
+table.heat .cell.na { background: var(--surface-2); color: var(--muted); }
+#sel-title { font-size: 0.98rem; font-weight: 600; margin: 0; }
+.hist svg { width: 100%; height: auto; display: block; }
+.hist text { fill: var(--muted); font: 10.5px var(--mono); }
+.hist .axis-title { font-family: var(--font); font-size: 11px; }
+.hist .bar { fill: var(--bar); }
+.hist .bar.on { fill: var(--ring); }
+.hist .grid { stroke: var(--line); stroke-width: 1; }
+.hist .med { stroke: var(--fg); stroke-width: 1.5; stroke-dasharray: 4 3; }
+#hist-tip, #res-note { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); min-height: 1.2em; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <div class="top">
+    <h1>Rectified ideal codes</h1>
+    <span class="sub">Single-unit maps, Hopfield measures and place-field statistics for every sparsity and unit count, on the 1716 × 1716 scaffold</span>
+  </div>
+
+  <div class="layout">
+    <aside class="rail" aria-label="Controls">
+      <section class="panel" aria-labelledby="t-pop">
+        <div class="ptitle" id="t-pop">Population</div>
+        <div class="seg" id="pops"></div>
+        <div class="rectsel" id="rect-row" hidden>
+          <div class="row"><label for="rect-f">Active</label><select id="rect-f" class="grow"></select></div>
+          <div class="row"><label for="rect-D">Units</label><select id="rect-D" class="grow"></select></div>
+        </div>
+        <p class="hint" id="rect-hint" hidden>Each code is the ideal code with half as many waves as units, rotated by a fixed Walsh-Hadamard matrix, thresholded so this share of units is active at every place, and scaled to unit length. The kernel radius r grows as the code gets sparser, so that the population kernel, after one inhibition constant is removed, is as wide as the ideal's at r = 16. 4096-unit codes take a few seconds per arena; use a smaller arena to drag smoothly.</p>
+        <div class="row" id="band-row" hidden>
+          <label for="band">Remove slow waves</label>
+          <select id="band" class="grow"></select>
+        </div>
+        <p class="hint" id="band-hint" hidden>Waves with |n| below the cutoff are dropped and replaced by faster draws from the same Gaussian, so there are always 512. |n| counts cycles across the 1716-cell scaffold, so a cutoff c removes every wavelength longer than 1716 / c cells. These are the probe's draws (ideal encoder option nmin). The check against Python uses the full draw.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-arena">
+        <div class="ptitle" id="t-arena">Arena</div>
+        <canvas class="minimap" id="minimap" aria-label="Scaffold map. Click or drag to move the arena." role="img"></canvas>
+        <div class="row">
+          <label for="size">Size</label>
+          <input type="range" class="grow" id="size-range" min="0" max="1000" step="1" aria-label="Arena size, log scale">
+          <input type="number" id="size" min="1" max="1716" step="1">
+        </div>
+        <div class="xy">
+          <label class="lbl" for="x0">x</label><input type="number" id="x0" min="0" max="1715" step="1">
+          <label class="lbl" for="y0">y</label><input type="number" id="y0" min="0" max="1715" step="1">
+        </div>
+        <select id="jump" aria-label="Go to a training patch of the trained encoders"></select>
+        <p class="hint">x and y are the arena's lower-left cell. Drag the map or the large unit view to move it, or use the arrow keys (Shift moves 10 cells). The scaffold wraps at its edges. Grey squares are the 118 patches of 50 × 50 cells both trained encoders (tanh and ReLU k128, seed 43) were trained on, 10% of the scaffold.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-map">
+        <div class="ptitle" id="t-map">Map</div>
+        <div class="seg" id="modes">
+          <button type="button" data-mode="raw" aria-pressed="true">Raw output</button>
+          <button type="button" data-mode="rate" aria-pressed="false">Rate map</button>
+        </div>
+        <p class="hint" id="mode-hint"></p>
+        <div class="row off"><input type="checkbox" id="rectify" checked disabled><label for="rectify">Negative values to zero</label></div>
+        <div class="row off">
+          <label for="sigma">Smoothing σ</label>
+          <input type="range" class="grow" id="sigma" min="0" max="5" step="0.5" value="0" disabled>
+          <span class="out" id="sigma-out">off</span>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="t-filt">
+        <div class="ptitle" id="t-filt">Field detection</div>
+        <div class="row">
+          <label for="thresh">Field threshold</label>
+          <input type="range" class="grow" id="thresh" min="0" max="90" step="5" value="0">
+          <span class="out" id="thresh-out">0%</span>
+        </div>
+        <div class="row">
+          <label for="minsize" class="grow">Minimum field size (cells)</label>
+          <input type="number" id="minsize" min="1" max="100000" step="1" value="1">
+        </div>
+        <p class="hint">These set the field outlines, field counts and field sizes, and never change the map. A field is a 4-connected region at or above the threshold fraction of the unit's peak in this arena, with at least the minimum size. At 0% a field is any connected region where the unit is above zero, the definition the grid results use (they also report 20% of peak).</p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-view">
+        <div class="ptitle" id="t-view">Units</div>
+        <div class="row">
+          <label for="sort">Sort</label>
+          <select id="sort" class="grow"></select>
+        </div>
+        <div class="row">
+          <button class="plain" id="resort" type="button" disabled>Re-sort</button>
+          <span class="hint" id="sort-note"></span>
+        </div>
+        <div class="row">
+          <label for="perpage">Per page</label>
+          <select id="perpage" class="grow">
+            <option value="36">36</option><option value="64" selected>64</option>
+            <option value="100">100</option><option value="144">144</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="scale">Colour scale</label>
+          <select id="scale" class="grow">
+            <option value="unit" selected>Each unit to its own peak</option>
+            <option value="page">Shared across the page</option>
+          </select>
+        </div>
+      </section>
+    </aside>
+
+    <section class="main" aria-label="Units">
+      <div class="pophead">
+        <h2 id="pop-title">Loading…</h2>
+        <p id="pop-desc"></p>
+      </div>
+      <div class="pager">
+        <button class="plain" id="prev" type="button" aria-label="Previous page">Previous</button>
+        <span id="pageinfo" class="mono" style="font-size:0.82rem"></span>
+        <button class="plain" id="next" type="button" aria-label="Next page">Next</button>
+      </div>
+      <div id="status" role="status">Loading the populations…</div>
+      <div class="tiles" id="tiles"></div>
+    </section>
+
+    <aside class="detail panel" aria-label="Selected unit">
+      <div class="dhead">
+        <h2 id="d-title">Selected unit</h2>
+        <div class="row">
+          <button class="plain" id="d-prev" type="button" aria-label="Previous unit">◀</button>
+          <button class="plain" id="d-next" type="button" aria-label="Next unit">▶</button>
+        </div>
+      </div>
+      <div class="mapwrap">
+        <canvas id="d-canvas" aria-label="Map of the selected unit. Drag to move the arena."></canvas>
+        <canvas id="d-overlay" aria-hidden="true"></canvas>
+      </div>
+      <div class="cbar">
+        <canvas id="d-bar" width="256" height="1" aria-hidden="true"></canvas>
+        <div class="ticks"><span id="d-lo"></span><span id="d-mid"></span><span id="d-hi"></span></div>
+      </div>
+      <div id="d-hover">Hover over the map to read a cell.</div>
+      <div class="row"><input type="checkbox" id="outlines" checked><label for="outlines">Outline fields</label></div>
+      <dl class="stats" id="d-stats"></dl>
+    </aside>
+  </div>
+
+  <section class="panel" aria-labelledby="t-res">
+    <div class="ptitle" id="t-res">Grid results</div>
+    <div class="resgrid">
+      <div class="rescol">
+        <div class="resctl">
+          <div class="row"><label for="res-measure">Measure</label><select id="res-measure"></select></div>
+          <div class="row" id="res-k-row"><label for="res-k">Stored goals K</label><select id="res-k"></select></div>
+          <div class="seg" id="res-inh">
+            <button type="button" data-inh="0" aria-pressed="true">No inhibition</button>
+            <button type="button" data-inh="1" aria-pressed="false">With inhibition</button>
+          </div>
+        </div>
+        <p class="hint" id="res-def"></p>
+        <div class="heatwrap"><table class="heat" id="heat" aria-describedby="res-def"></table></div>
+        <div id="res-note" role="status"></div>
+      </div>
+      <div class="rescol">
+        <h3 id="sel-title">Selected code</h3>
+        <dl class="stats" id="sel-stats"></dl>
+        <div class="hist">
+          <div class="resctl">
+            <div class="ptitle">Field size, active-region fields</div>
+            <div class="seg" id="hist-mode">
+              <button type="button" data-w="fields" aria-pressed="true">Share of fields</button>
+              <button type="button" data-w="cells" aria-pressed="false">Share of active cells</button>
+            </div>
+          </div>
+          <svg id="hist" viewBox="0 0 380 190" role="img" aria-label="Histogram of field diameters for the selected code"></svg>
+          <div id="hist-tip">Hover over a bar to read it.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div id="engine"></div>
+    <div>Checks against the repo's Python code, on a 16 × 16 arena that wraps around both scaffold edges:</div>
+    <ul id="checks"></ul>
+    <div id="prov"></div>
+  </footer>
+</div>
+
+<script>
+"use strict";
+// ================================================================ constants
+const $ = id => document.getElementById(id);
+const CHUNK = 16384;              // cells per GPU batch
+const EXT_FLOATS = 16384 * 256;   // floats per GPU read-back
+const STAT_BATCH = 128;           // units per batch when sorting by a statistic
+const MAX_RES = 512;              // maps above this many cells per side are block-averaged
+const THUMB_RES = 160;
+const DETAIL_RES = 512;
+const SIZE_MIN = 4;
+const POP_ORDER = ["rect", "grid", "ideal", "ideal_rot", "ideal_place", "ideal_sparse", "ideal_sparse20", "trained", "trained_relu", "untrained", "hippocampus", "hippocampus_smooth"];
+// The MLP encoders, all computed by the GPU engine. Each one's output activation is its manifest "output".
+const MLP_KEYS = ["trained", "trained_relu", "untrained"];
+const ROT_CACHE_FLOATS = 1 << 25;  // the rotated ideal keeps every unit for arenas up to this many values
+const TF_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
+let NPOS = 1716;
+
+const st = {
+  M: null, pops: {}, mlp: {}, popKey: "rect",
+  RM: null, RR: null, RX: null, rect: { f: 0.1, D: 1024 },
+  res: { measure: "err", K: "5", inh: false, hist: "fields", hover: -1 },
+  x0: 808, y0: 808, S: 100,
+  perPage: 64, page: 0, scale: "unit",
+  sort: "id", order: null, orderPop: null, sortedFor: null, sortToken: 0, shuffleSeed: 1,
+  f: { rectify: true, sigma: 0, thresh: 0, minSize: 1 },
+  mode: "raw",
+  sel: null, outlines: true, detail: null,
+  engine: null, engineName: "", engineNote: "", engineError: "",
+  checks: {},
+  nmin: 0,
+  interacting: false,
+  bufs: { tiles: [], detail: null, labels: null, sort: null },
+};
+// The ideal encoder's frequencies: the full draw, or the draw with slow waves removed (st.nmin).
+function idealFreqs(ref) {
+  const P = st.M.populations.ideal, b = P.bands;
+  return (ref || !b || !st.nmin) ? P.freqs : b.freqs[String(st.nmin)];
+}
+const isIdealPop = key => key === "ideal" || key === "ideal_rot";
+// The same draw as a flat Int32Array [nx0, ny0, nx1, ny1, ...], cached per draw, for the map code and the GPU.
+const FLAT_FREQS = new Map();
+function idealFlat(ref) {
+  const key = ref ? "full" : String(st.nmin);
+  if (!FLAT_FREQS.has(key)) FLAT_FREQS.set(key, Int32Array.from(idealFreqs(ref).flat()));
+  return FLAT_FREQS.get(key);
+}
+
+function mod(a, n) { return ((a % n) + n) % n; }
+const errText = e => (e && e.message) ? e.message : String(e);
+function setStatus(msg, isErr) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!isErr); }
+function fmtVal(x) {
+  if (!isFinite(x)) return "–";
+  if (x === 0) return "0";
+  const a = Math.abs(x);
+  return (a < 1e-3 || a >= 1e4) ? x.toExponential(2) : x.toPrecision(3);
+}
+const fmtMs = ms => ms >= 1000 ? (ms / 1000).toFixed(2) + " s" : ms >= 10 ? Math.round(ms) + " ms" : ms.toFixed(1) + " ms";
+
+// ================================================================ colour
+// Sequential: one blue ramp, light (zero) to dark (peak); reversed in dark mode.
+// Diverging: blue (negative) and red (positive) arms around a neutral grey zero.
+const SEQ_LIGHT = ["#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7", "#3987e5",
+                   "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"];
+const SEQ_DARK = SEQ_LIGHT.slice().reverse();
+const DIV_LIGHT = ["#0d366b", "#1c5cab", "#3987e5", "#9ec5f4", "#f0efec", "#f3b4ad", "#e8706b", "#c5383a", "#7a1b1d"];
+const DIV_DARK = ["#b7d3f6", "#6da7ec", "#2a78d6", "#184f95", "#383835", "#8f2526", "#c5383a", "#e8706b", "#f3b4ad"];
+const OUTLINE = "#ffb000";
+const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const toLin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+const toSrgb = c => { const v = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; return Math.round(Math.max(0, Math.min(1, v)) * 255); };
+function makeLut(stops) {
+  const lin = stops.map(h => hexRgb(h).map(toLin)), lut = new Uint8ClampedArray(256 * 3), last = stops.length - 1;
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255 * last, k = Math.min(Math.floor(t), last - 1), f = t - k;
+    for (let ch = 0; ch < 3; ch++) lut[i * 3 + ch] = toSrgb(lin[k][ch] * (1 - f) + lin[k + 1][ch] * f);
+  }
+  return lut;
+}
+function isDark() {
+  const t = document.documentElement.getAttribute("data-theme");
+  if (t === "dark") return true;
+  if (t === "light") return false;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+let LUT = null, MM_COL = null;
+function buildLuts() {
+  const d = isDark(), cs = getComputedStyle(document.documentElement);
+  LUT = { seq: makeLut(d ? SEQ_DARK : SEQ_LIGHT), div: makeLut(d ? DIV_DARK : DIV_LIGHT) };
+  // The minimap's colours, read once per theme instead of on every move.
+  MM_COL = { bg: cs.getPropertyValue("--surface-2").trim(), dots: cs.getPropertyValue("--muted").trim(), ring: cs.getPropertyValue("--ring").trim() };
+}
+
+// ================================================================ data
+async function fetchText(u) { const r = await fetch(u); if (!r.ok) throw new Error(u + ": HTTP " + r.status); return r.text(); }
+function b64Bytes(t) { const bin = atob(t.trim()), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; }
+const f32 = t => new Float32Array(b64Bytes(t).buffer);
+const f64 = t => new Float64Array(b64Bytes(t).buffer);
+
+function unpackMlp(meta, all) {
+  const get = n => {
+    const a = meta.arrays.find(x => x.name === n);
+    if (!a) throw new Error(meta.label + ": no array " + n);
+    return all.subarray(a.offset, a.offset + a.shape.reduce((p, q) => p * q, 1));
+  };
+  return { T: get("T"), b1: get("b1"), W: ["W2", "W3", "W4", "W5"].map(get), b: ["b2", "b3", "b4", "b5"].map(get),
+           gain: meta.gain, act: meta.output || "tanh", hidden: meta.hidden, out: meta.n_units, rowOff: meta.row_offsets };
+}
+
+async function loadAll() {
+  const [M, RM, RR] = await Promise.all([
+    fetchText("manifest.json").then(JSON.parse), fetchText("rect_manifest.json").then(JSON.parse),
+    fetchText("rect_results.json").then(JSON.parse).catch(() => null)]);
+  st.M = M; NPOS = M.npos;
+  st.RM = RM; st.RR = RR; st.RX = RR ? indexResults(RR) : null;
+  st.pops.rect = makeRect(RM);
+  const P = M.populations;
+  const [wpg, wpgS, qPlace, ...wMlp] = await Promise.all([
+    fetchText(P.hippocampus.wpg_file), fetchText(P.hippocampus_smooth.wpg_file), fetchText(P.ideal_place.q_file),
+    ...MLP_KEYS.map(k => fetchText(P[k].weights_file))]);
+  st.pops.grid = makeGrid(P.grid);
+  st.pops.ideal = makeIdeal(P.ideal);
+  st.pops.ideal_rot = makeIdealRot(P.ideal_rot, P.ideal);
+  st.pops.ideal_place = makeIdealPlace(P.ideal_place, P.ideal, f32(qPlace));
+  st.pops.ideal_sparse = makeIdealSparse("ideal_sparse", P.ideal_sparse, st.pops.ideal_rot.signs);
+  st.pops.ideal_sparse20 = makeIdealSparse("ideal_sparse20", P.ideal_sparse20, st.pops.ideal_rot.signs);
+  st.pops.hippocampus = makeHpc("hippocampus", P.hippocampus, f64(wpg));
+  st.pops.hippocampus_smooth = makeHpc("hippocampus_smooth", P.hippocampus_smooth, f64(wpgS));
+  MLP_KEYS.forEach((k, i) => {
+    st.mlp[k] = unpackMlp(P[k], f32(wMlp[i]));
+    st.pops[k] = makeMlp(k, P[k]);
+  });
+}
+
+// ================================================================ block averaging
+// Maps above MAX_RES cells per side come back as means over f x f blocks.
+function poolPlan(S) {
+  const f = Math.max(1, Math.ceil(S / MAX_RES)), W = Math.ceil(S / f);
+  const bi = new Int32Array(S);
+  for (let i = 0; i < S; i++) bi[i] = (i / f) | 0;
+  let inv = null;
+  if (f > 1) {
+    inv = new Float32Array(W * W);
+    for (let R = 0; R < W; R++) for (let C = 0; C < W; C++)
+      inv[R * W + C] = 1 / ((Math.min(S, (R + 1) * f) - R * f) * (Math.min(S, (C + 1) * f) - C * f));
+  }
+  return { f, W, bi, inv };
+}
+function finishPool(out, K, pl) {
+  if (pl.f === 1) return;
+  const WW = pl.W * pl.W;
+  for (let q = 0; q < K; q++) for (let b = 0; b < WW; b++) out[q * WW + b] *= pl.inv[b];
+}
+
+// ================================================================ map computations shared with the worker
+// These use only their arguments (plus MAX_RES and ROT_CACHE_FLOATS), so the background thread
+// runs this exact source, rebuilt from Function.prototype.toString in startWorker.
+function trigTables(npos) {
+  const c = new Float64Array(npos), s = new Float64Array(npos);
+  for (let k = 0; k < npos; k++) { const th = 2 * Math.PI * k / npos; c[k] = Math.cos(th); s[k] = Math.sin(th); }
+  return [c, s];
+}
+function gridMapsCore(units, a, G, alloc) {
+  const S = a.S, pl = poolPlan(S), W = pl.W, WW = W * W, out = alloc(units.length * WW);
+  const ex = new Float64Array(S), ey = new Float64Array(S);
+  for (let q = 0; q < units.length; q++) {
+    const u = units[q], m = G.mods[G.unitMod[u]], l = m.l, k = u - m.off, i = Math.floor(k / l), j = k % l;
+    for (let c = 0; c < S; c++) { let d = Math.abs(i - mod(a.x0 + c, G.npos) % l); d = Math.min(d, l - d); const z = d / m.sigma; ex[c] = Math.exp(-0.5 * z * z); }
+    for (let r = 0; r < S; r++) { let d = Math.abs(j - mod(a.y0 + r, G.npos) % l); d = Math.min(d, l - d); const z = d / m.sigma; ey[r] = Math.exp(-0.5 * z * z); }
+    const base = q * WW;
+    for (let r = 0; r < S; r++) {
+      const e = ey[r], rb = base + pl.bi[r] * W;
+      for (let c = 0; c < S; c++) out[rb + pl.bi[c]] += e * ex[c];
+    }
+  }
+  finishPool(out, units.length, pl);
+  return { data: out, W, f: pl.f };
+}
+function idealMapsCore(units, a, I, alloc) {
+  const npos = I.npos, nf = I.F.length / 2, tr = trigTables(npos);
+  const S = a.S, pl = poolPlan(S), W = pl.W, WW = W * W, out = alloc(units.length * WW);
+  const kx = new Int32Array(S), ky = new Int32Array(S);
+  for (let q = 0; q < units.length; q++) {
+    const u = units[q], w = u % nf, T = u >= nf ? tr[1] : tr[0], nx = I.F[2 * w], ny = I.F[2 * w + 1];
+    for (let c = 0; c < S; c++) kx[c] = mod(nx * mod(a.x0 + c, npos), npos);
+    for (let r = 0; r < S; r++) ky[r] = mod(ny * mod(a.y0 + r, npos), npos);
+    const base = q * WW;
+    for (let r = 0; r < S; r++) {
+      const y = ky[r], rb = base + pl.bi[r] * W;
+      for (let c = 0; c < S; c++) { let k = kx[c] + y; if (k >= npos) k -= npos; out[rb + pl.bi[c]] += I.amp * T[k]; }
+    }
+  }
+  finishPool(out, units.length, pl);
+  return { data: out, W, f: pl.f };
+}
+// The place-field rotation: unit u at a cell is Q[u] . z(cell), z the full ideal code (R.F, R.amp).
+function placeMapsCore(units, a, R, alloc) {
+  const npos = R.npos, nf = R.F.length / 2, D = 2 * nf, tr = trigTables(npos), cosT = tr[0], sinT = tr[1], Q = R.Q;
+  const S = a.S, pl = poolPlan(S), W = pl.W, WW = W * W, K = units.length, out = alloc(K * WW);
+  const z = new Float64Array(D);
+  for (let r = 0; r < S; r++) {
+    const y = mod(a.y0 + r, npos), rb = pl.bi[r] * W;
+    for (let c = 0; c < S; c++) {
+      const x = mod(a.x0 + c, npos), b = rb + pl.bi[c];
+      for (let w = 0; w < nf; w++) {
+        let k = mod(R.F[2 * w] * x, npos) + mod(R.F[2 * w + 1] * y, npos);
+        if (k >= npos) k -= npos;
+        z[w] = R.amp * cosT[k]; z[w + nf] = R.amp * sinT[k];
+      }
+      for (let q = 0; q < K; q++) {
+        const row = units[q] * D;
+        let s = 0;
+        for (let j = 0; j < D; j++) s += Q[row + j] * z[j];
+        out[q * WW + b] += s;
+      }
+    }
+  }
+  finishPool(out, K, pl);
+  return { data: out, W, f: pl.f };
+}
+function hpcMapsCore(units, a, H, alloc) {
+  const S = a.S, pl = poolPlan(S), W = pl.W, WW = W * W, out = alloc(units.length * WW), L = H.L, Wpg = H.Wpg;
+  const cx = L.map(() => new Int32Array(S)), cy = L.map(() => new Int32Array(S));
+  for (let m = 0; m < L.length; m++) {
+    const l = L[m];
+    for (let c = 0; c < S; c++) cx[m][c] = H.offs[m] + (mod(a.x0 + c, H.npos) % l) * l;
+    for (let r = 0; r < S; r++) cy[m][r] = mod(a.y0 + r, H.npos) % l;
+  }
+  const cx0 = cx[0], cx1 = cx[1], cx2 = cx[2], cy0 = cy[0], cy1 = cy[1], cy2 = cy[2];
+  for (let q = 0; q < units.length; q++) {
+    const row0 = units[q] * H.ng, base = q * WW;
+    for (let r = 0; r < S; r++) {
+      const y0 = row0 + cy0[r], y1 = row0 + cy1[r], y2 = row0 + cy2[r], rb = base + pl.bi[r] * W;
+      for (let c = 0; c < S; c++) {
+        const v = Wpg[y0 + cx0[c]] + Wpg[y1 + cx1[c]] + Wpg[y2 + cx2[c]] - H.thresh;
+        if (v > 0) out[rb + pl.bi[c]] += v;
+      }
+    }
+  }
+  finishPool(out, units.length, pl);
+  return { data: out, W, f: pl.f };
+}
+function fwhtInPlace(v, D) {
+  for (let h = 1; h < D; h <<= 1)
+    for (let i = 0; i < D; i += h << 1)
+      for (let j = i; j < i + h; j++) { const x = v[j], y = v[j + h]; v[j] = x + y; v[j + h] = x - y; }
+}
+// Rotated ideal, cell-major (block b, unit u at b * K + u) for the units in `keep`, or all units if null.
+// With R.thresh it is the sparse code instead: relu(Q z - t), scaled to unit length at each cell.
+function idealRotCompute(a, keep, R) {
+  const npos = R.npos, nf = R.F.length / 2, D = 2 * nf, tr = trigTables(npos), cosT = tr[0], sinT = tr[1];
+  const scale = Math.pow(D, -R.signs.length / 2);
+  const S = a.S, pl = poolPlan(S), W = pl.W, WW = W * W, K = keep ? keep.length : D;
+  const data = new Float32Array(WW * K), kx = new Int32Array(nf * S), ky = new Int32Array(nf * S);
+  for (let w = 0; w < nf; w++) {
+    const nx = R.F[2 * w], ny = R.F[2 * w + 1];
+    for (let c = 0; c < S; c++) kx[w * S + c] = mod(nx * mod(a.x0 + c, npos), npos);
+    for (let r = 0; r < S; r++) ky[w * S + r] = mod(ny * mod(a.y0 + r, npos), npos);
+  }
+  const v = new Float64Array(D);
+  for (let r = 0; r < S; r++) {
+    const rb = pl.bi[r] * W;
+    for (let c = 0; c < S; c++) {
+      for (let w = 0; w < nf; w++) {
+        let k = kx[w * S + c] + ky[w * S + r];
+        if (k >= npos) k -= npos;
+        v[w] = R.amp * cosT[k]; v[w + nf] = R.amp * sinT[k];
+      }
+      for (const s of R.signs) { for (let i = 0; i < D; i++) v[i] *= s[i]; fwhtInPlace(v, D); }
+      const o = (rb + pl.bi[c]) * K;
+      let sc = scale;
+      if (R.thresh !== undefined) {
+        let ss = 0;
+        for (let i = 0; i < D; i++) { const y = v[i] * scale - R.thresh; v[i] = y > 0 ? y : 0; ss += v[i] * v[i]; }
+        sc = ss > 0 ? 1 / Math.sqrt(ss) : 0;
+      }
+      if (keep) for (let q = 0; q < K; q++) data[o + q] += v[keep[q]] * sc;
+      else for (let i = 0; i < D; i++) data[o + i] += v[i] * sc;
+    }
+  }
+  if (pl.f > 1) for (let b = 0; b < WW; b++) { const m = pl.inv[b]; for (let q = 0; q < K; q++) data[b * K + q] *= m; }
+  return { data, W, f: pl.f, K };
+}
+// Keeps every rotated unit for the arena in box.cache while it fits, so paging is free.
+function idealRotMapsCore(units, a, R, alloc, box) {
+  const D = R.F.length, pl = poolPlan(a.S), WW = pl.W * pl.W, out = alloc(units.length * WW);
+  let src, idx;
+  if (WW * D <= ROT_CACHE_FLOATS) {
+    if (!box.cache || box.cache.key !== R.key) box.cache = Object.assign(idealRotCompute(a, null, R), { key: R.key });
+    src = box.cache; idx = units;
+  } else { src = idealRotCompute(a, units, R); idx = units.map((_, q) => q); }
+  const K = src.K;
+  for (let q = 0; q < units.length; q++) { const col = idx[q], base = q * WW; for (let b = 0; b < WW; b++) out[base + b] = src.data[b * K + col]; }
+  return { data: out, W: src.W, f: src.f };
+}
+// The background thread's message loop. Output buffers come back from the page after use and are reused.
+function workerMain() {
+  let wpgs = null, signs = null, placeQ = null;
+  const box = { cache: null }, pool = new Map();
+  const take = n => {
+    const list = pool.get(n);
+    if (list && list.length) { const out = new Float32Array(list.pop(), 0, n); out.fill(0); return out; }
+    return new Float32Array(n);
+  };
+  self.onmessage = e => {
+    const m = e.data;
+    if (m.type === "recycle") {
+      const n = m.buf.byteLength / 4;
+      if (!pool.has(n)) pool.set(n, []);
+      if (pool.get(n).length < 4) pool.get(n).push(m.buf);
+      return;
+    }
+    try {
+      if (m.type === "init") { wpgs = m.wpgs; signs = m.signs; placeQ = m.placeQ; self.postMessage({ id: m.id, res: true }); return; }
+      let res;
+      if (m.type === "grid") res = gridMapsCore(m.units, m.a, m.args, take);
+      else if (m.type === "ideal") res = idealMapsCore(m.units, m.a, m.args, take);
+      else if (m.type === "hpc") res = hpcMapsCore(m.units, m.a, Object.assign({ Wpg: wpgs[m.args.key] }, m.args), take);
+      else if (m.type === "ideal_rot") res = idealRotMapsCore(m.units, m.a, Object.assign({ signs }, m.args), take, box);
+      else if (m.type === "ideal_place") res = placeMapsCore(m.units, m.a, Object.assign({ Q: placeQ }, m.args), take);
+      else throw new Error("unknown job " + m.type);
+      self.postMessage({ id: m.id, res }, [res.data.buffer]);
+    } catch (err) {
+      self.postMessage({ id: m.id, error: String((err && err.message) || err) });
+    }
+  };
+}
+
+// ================================================================ background thread
+const allocMain = n => new Float32Array(n);
+const wk = { w: null, next: 1, pending: new Map(), note: "" };
+function stopWorker(why) {
+  if (wk.w) wk.w.terminate();
+  wk.w = null; wk.note = why;
+  for (const p of wk.pending.values()) p.reject(new Error(why));
+  wk.pending.clear();
+  if (st.M) updateEngineNote();
+}
+function callWorker(type, msg, transfer) {
+  return new Promise((resolve, reject) => {
+    const id = wk.next++;
+    wk.pending.set(id, { resolve, reject });
+    wk.w.postMessage(Object.assign({ id, type }, msg), transfer || []);
+  });
+}
+async function startWorker() {
+  try {
+    const fns = [mod, poolPlan, finishPool, trigTables, gridMapsCore, idealMapsCore, placeMapsCore, hpcMapsCore,
+                 fwhtInPlace, idealRotCompute, idealRotMapsCore, workerMain];
+    const src = "\"use strict\";\nconst MAX_RES = " + MAX_RES + ";\nconst ROT_CACHE_FLOATS = " + ROT_CACHE_FLOATS + ";\n" +
+      fns.map(f => f.toString()).join("\n\n") + "\nworkerMain();\n";
+    const w = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+    w.onmessage = e => {
+      const { id, res, error } = e.data, p = wk.pending.get(id);
+      if (!p) return;
+      wk.pending.delete(id);
+      if (error) p.reject(new Error(error)); else p.resolve(res);
+    };
+    w.onerror = e => { if (e.preventDefault) e.preventDefault(); stopWorker("the background thread stopped (" + (e.message || "unknown error") + ")"); };
+    wk.w = w;
+    await Promise.race([
+      callWorker("init", { wpgs: { hippocampus: st.pops.hippocampus.Wpg, hippocampus_smooth: st.pops.hippocampus_smooth.Wpg },
+                           signs: st.pops.ideal_rot.signs, placeQ: st.pops.ideal_place.Q }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("no reply within 5 s")), 5000)),
+    ]);
+  } catch (e) { stopWorker("the background thread could not start (" + errText(e) + ")"); }
+}
+// A JavaScript-computed population's maps: on the background thread when it is running, else here.
+async function jsMaps(type, units, a, args, onMain) {
+  if (wk.w) {
+    try { const res = await callWorker(type, { units, a, args }); res.fromWorker = true; return res; }
+    catch (e) { if (wk.w) throw e; }
+  }
+  return onMain();
+}
+// Hands a worker result's buffer back once the page has finished with it.
+function recycle(res) {
+  if (!res || !res.fromWorker || !wk.w) return;
+  try { wk.w.postMessage({ type: "recycle", buf: res.data.buffer }, [res.data.buffer]); } catch (e) { /* keep it */ }
+}
+
+// ================================================================ populations computed in JavaScript
+function makeGrid(meta) {
+  const L = st.M.lambdas, fw = st.M.fwhm_ratio, mods = [];
+  let off = 0;
+  for (const l of L) { mods.push({ l, off, sigma: l * fw / (2 * Math.sqrt(2 * Math.LN2)) }); off += l * l; }
+  const unitMod = [];
+  mods.forEach(m => { for (let k = 0; k < m.l * m.l; k++) unitMod[m.off + k] = m; });
+  const phase = u => { const m = unitMod[u], k = u - m.off; return [m, Math.floor(k / m.l), k % m.l]; };
+  const G = { npos: NPOS, mods: mods.map(m => ({ l: m.l, off: m.off, sigma: m.sigma })), unitMod: Int32Array.from(unitMod, m => mods.indexOf(m)) };
+  return {
+    key: "grid", meta, n: meta.n_units, signed: false,
+    label(u) { const [m, i, j] = phase(u); return "λ" + m.l + " " + i + "," + j; },
+    info(u) { const [m, i, j] = phase(u); return [["Module", "period " + m.l + " cells"], ["Phase (x, y)", i + ", " + j]]; },
+    maps(units, a) { return jsMaps("grid", units, a, G, () => gridMapsCore(units, a, G, allocMain)); },
+  };
+}
+
+function makeIdeal(meta) {
+  const nf = meta.freqs.length, amp = meta.amp;
+  const wave = (u, F) => ({ w: u % nf, n: F[u % nf], sin: u >= nf });
+  return {
+    key: "ideal", meta, n: 2 * nf, signed: true,
+    label(u) { const v = wave(u, meta.freqs); return (v.sin ? "sin " : "cos ") + v.w; },
+    info(u) {
+      const v = wave(u, idealFreqs(false)), nx = v.n[0], ny = v.n[1], k = Math.hypot(nx, ny);
+      return [["Wave", (v.sin ? "sin" : "cos") + " of wave " + v.w], ["Frequency n", nx + ", " + ny],
+              ["Wavelength", k ? (NPOS / k).toFixed(1) + " cells" : "constant"],
+              ["Direction", k ? (Math.atan2(ny, nx) * 180 / Math.PI).toFixed(0) + "°" : "–"]];
+    },
+    maps(units, a, ref) {
+      const I = { npos: NPOS, F: idealFlat(ref), amp };
+      return jsMaps("ideal", units, a, I, () => idealMapsCore(units, a, I, allocMain));
+    },
+  };
+}
+
+// The ideal code remixed by one fixed orthogonal matrix Q = H D3 H D2 H D1 / 1024^1.5, with H the
+// Walsh-Hadamard matrix and D_t the random signs in the manifest. Every similarity equals the
+// ideal's; only the single-unit maps change. Each cell needs all 1024 ideal units, so on WebGPU one
+// workgroup per cell runs the sign flips and Hadamard stages in shared memory (wgslRot). Without
+// WebGPU the same transform runs in JavaScript (idealRotCompute), on the background thread if it started.
+function makeIdealRot(meta, idealMeta) {
+  const nf = idealMeta.freqs.length, amp = idealMeta.amp, D = 2 * nf;
+  if (D & (D - 1)) throw new Error("rotated ideal: the unit count must be a power of two");
+  const signs = meta.signs.map(s => Float64Array.from(s));
+  const box = { cache: null };
+  return {
+    key: "ideal_rot", meta, n: D, signed: true, signs,
+    label(u) { return "unit " + u; },
+    info(u) { return [["Output unit", String(u)], ["Mixes", "all " + nf + " waves of the ideal code" + (st.nmin ? ", |n| ≥ " + st.nmin : "")],
+                      ["Rotation", signs.length + " rounds of signs and Walsh-Hadamard, seed " + meta.seed]]; },
+    maps(units, a, ref) {
+      const F = idealFlat(ref), fkey = ref ? "full" : String(st.nmin);
+      if (st.engine && st.engine.rotMaps) return st.engine.rotMaps(units, a, F, fkey);
+      const R = { npos: NPOS, F, amp, key: a.x0 + "," + a.y0 + "," + a.S + "," + fkey };
+      return jsMaps("ideal_rot", units, a, R, () => idealRotMapsCore(units, a, Object.assign({ signs }, R), allocMain, box));
+    },
+  };
+}
+
+// The ideal code remixed so every unit is a place cell (docs/place_fields_rotation.tex, commit f928d29).
+// Row u of Q is the ideal code at centre c_u, orthogonalised by Q = G^{-1/2} Z; unit u at a cell is
+// Q[u] . z(cell). On WebGPU a shader writes z for each cell and the encoders' matrix multiply applies
+// the requested rows (runPlace); without WebGPU it runs in JavaScript (placeMapsCore), on the
+// background thread if it started. It always uses the full frequency draw: Q was built from it.
+function makeIdealPlace(meta, idealMeta, Q) {
+  const nf = idealMeta.freqs.length, D = 2 * nf, cs = meta.centres;
+  if (Q.length !== D * D) throw new Error("place-field rotation: expected a " + D + " × " + D + " matrix");
+  const R = { npos: NPOS, F: Int32Array.from(idealMeta.freqs.flat()), amp: idealMeta.amp };
+  return {
+    key: "ideal_place", meta, n: D, signed: true, Q, F: R.F,
+    label(u) { return "unit " + u; },
+    info(u) { return [["Output unit", String(u)], ["Field centre (x, y)", cs[u][0] + ", " + cs[u][1]],
+                      ["Mixes", "all " + nf + " waves of the ideal code"]]; },
+    maps(units, a) {
+      if (st.engine && st.engine.placeMaps) return st.engine.placeMaps(units, a);
+      return jsMaps("ideal_place", units, a, R, () => placeMapsCore(units, a, Object.assign({ Q }, R), allocMain));
+    },
+  };
+}
+
+// The probe's sparse non-negative code (meta.spec): the ideal code drawn at meta.r, remixed by the
+// rotated ideal's matrix Q, thresholded so a fraction meta.active of units fire at each place (10% at
+// r = 23.2, or 20% at r = 18.8), and scaled to unit length at each place, relu(Q z - t) / |relu(Q z - t)|.
+// The threshold and the scaling need every unit at a cell, so it runs in JavaScript (idealRotCompute
+// with R.thresh), on the background thread if it started.
+function makeIdealSparse(key, meta, signs) {
+  const nf = meta.freqs.length, D = 2 * nf, F = Int32Array.from(meta.freqs.flat()), box = { cache: null };
+  return {
+    key, meta, n: D, signed: false,
+    label(u) { return "unit " + u; },
+    info(u) { return [["Output unit", String(u)], ["Active", "about " + Math.round(100 * meta.active) + "% of units at each place"],
+                      ["Waves", nf + ", Gaussian r = " + meta.r + " cells"], ["Rotation", "the same as Ideal, rotated"]]; },
+    maps(units, a) {
+      const R = { npos: NPOS, F, amp: meta.amp, thresh: meta.thresh, key: key + "," + a.x0 + "," + a.y0 + "," + a.S };
+      return jsMaps("ideal_rot", units, a, R, () => idealRotMapsCore(units, a, Object.assign({ signs }, R), allocMain, box));
+    },
+  };
+}
+
+// The rectified-ideal grid (analysis/rect_ideal, rect_manifest.json): one population whose code is
+// picked by st.rect (active share f, unit count D). Each code is relu(Q z - t) / |.| with z the
+// ideal code of D / 2 waves at its own r, Q = H D3 H D2 H D1 / D^1.5 with that D's signs, and t set
+// for a share f of active units. Same transform as the sparse populations above (idealRotCompute
+// with R.thresh); the signs travel with each job because they depend on D.
+function rectKey(f = st.rect.f, D = st.rect.D) { return "f" + String(Math.round(100 * f)).padStart(2, "0") + "_D" + D; }
+function makeRect(RM) {
+  const byKey = new Map(RM.codes.map(c => [c.key, c]));
+  const signs = {}, flat = new Map(), box = { cache: null };
+  for (const D of RM.Ds) signs[D] = RM.signs[String(D)].map(s => Int8Array.from(s));
+  const cur = () => byKey.get(rectKey());
+  const meta = { label: "Rectified ideal", description: "" };
+  const pop = {
+    key: "rect", meta, signed: false, byKey,
+    get n() { return cur().D; },
+    code: cur,
+    refresh() {
+      const c = cur();
+      meta.description = Math.round(100 * c.f) + "% of " + c.D + " units active at each place: relu(Q z − t) scaled to unit length, " +
+        "with z the ideal code of " + c.n_freq + " waves at kernel radius r = " + c.r.toFixed(1) + " cells and Q the fixed " +
+        c.D + "-unit Walsh-Hadamard rotation.";
+    },
+    label(u) { return "unit " + u; },
+    info(u) {
+      const c = cur();
+      return [["Output unit", String(u)], ["Code", Math.round(100 * c.f) + "% active, " + c.D + " units"],
+              ["Waves", c.n_freq + ", r = " + c.r.toFixed(2) + " cells"], ["Threshold t", c.thresh.toFixed(5)]];
+    },
+    maps(units, a, ref, code) {
+      const c = code || cur();
+      if (!flat.has(c.key)) flat.set(c.key, Int32Array.from(c.freqs));
+      const R = { npos: NPOS, F: flat.get(c.key), amp: c.amp, thresh: c.thresh, signs: signs[c.D],
+                  key: "rect," + c.key + "," + a.x0 + "," + a.y0 + "," + a.S };
+      return jsMaps("ideal_rot", units, a, R, () => idealRotMapsCore(units, a, R, allocMain, box));
+    },
+  };
+  pop.refresh();
+  return pop;
+}
+
+// A Vector-HaSH place layer: relu(Wpg g - thresh) on the one-hot grid code. The smoothed-input layer
+// is the same computation with Wpg pre-multiplied by the smoothing matrix (export.smoothed_wpg).
+function makeHpc(key, meta, Wpg) {
+  const L = st.M.lambdas, ng = L.reduce((s, l) => s + l * l, 0), offs = [];
+  let o = 0;
+  for (const l of L) { offs.push(o); o += l * l; }
+  const th = meta.thresh, H = { key, npos: NPOS, L, offs, ng, thresh: th };
+  return {
+    key, meta, n: meta.n_units, signed: false, Wpg,
+    label(u) { return "cell " + u; },
+    info(u) { return [["Place cell", String(u)], ["Threshold", String(th)]]; },
+    maps(units, a) { return jsMaps("hpc", units, a, H, () => hpcMapsCore(units, a, Object.assign({ Wpg }, H), allocMain)); },
+  };
+}
+
+function makeMlp(key, meta) {
+  return {
+    key, meta, n: meta.n_units, signed: meta.signed !== false,
+    label(u) { return "unit " + u; },
+    info(u) { return [["Output unit", String(u)]]; },
+    maps(units, a) {
+      if (!st.engine) return Promise.reject(new Error(st.engineError || "the GPU engine is still starting"));
+      return st.engine.maps(key, units, a);
+    },
+  };
+}
+
+// ================================================================ GPU engines for the MLPs
+let gpuChain = Promise.resolve();
+function gpuLock(fn) { const p = gpuChain.then(fn); gpuChain = p.catch(() => {}); return p; }
+
+function wgslCommon(P) {
+  return `
+struct Params { n: u32, start: u32, S: u32, x0: u32, y0: u32, K: u32, p1: u32, p2: u32 };
+const NPOS: u32 = ${P.npos}u;
+const HID: u32 = ${P.hidden}u;
+const GAIN: f32 = ${Number(P.gain).toFixed(6)};
+fn erf4(x: vec4f) -> vec4f {
+  let a = abs(x);
+  let t = 1.0 / (1.0 + 0.3275911 * a);
+  let p = ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t;
+  return sign(x) * (1.0 - p * exp(-a * a));
+}
+fn gelu4(x: vec4f) -> vec4f { return 0.5 * x * (1.0 + erf4(x * 0.7071067811865476)); }
+fn gelu1(x: f32) -> f32 { return gelu4(vec4f(x)).x; }
+`;
+}
+function wgslLayer1(P) {
+  const L = P.lambdas, O = P.rowOff;
+  const row = m => `${O[m]}u + (x % ${L[m]}u) * ${L[m]}u + (y % ${L[m]}u)`;
+  return wgslCommon(P) + `
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read> T: array<f32>;
+@group(0) @binding(2) var<storage, read> b1: array<f32>;
+@group(0) @binding(3) var<storage, read_write> H: array<f32>;
+@compute @workgroup_size(${P.hidden})
+fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+  let i = wg.x;
+  if (i >= prm.n) { return; }
+  let c = prm.start + i;
+  let row = c / prm.S;
+  let col = c - row * prm.S;
+  let x = (prm.x0 + col) % NPOS;
+  let y = (prm.y0 + row) % NPOS;
+  let k = lid.x;
+  let r0 = ${row(0)};
+  let r1 = ${row(1)};
+  let r2 = ${row(2)};
+  let h = b1[k] + T[r0 * HID + k] + T[r1 * HID + k] + T[r2 * HID + k];
+  H[i * HID + k] = gelu1(h);
+}`;
+}
+function wgslMatmul(P, K, M, act) {
+  let inner = "";
+  for (let kq = 0; kq < 4; kq++) {
+    inner += "    {\n";
+    for (let i = 0; i < 4; i++) inner += `      let a${i} = As[(ty * 4u + ${i}u) * 4u + ${kq}u];\n`;
+    ["x", "y", "z", "w"].forEach((comp, kk) => {
+      inner += `      { let b = Bs[${kq * 4 + kk}u * 16u + tx];` +
+        ` acc0 += a0.${comp} * b; acc1 += a1.${comp} * b; acc2 += a2.${comp} * b; acc3 += a3.${comp} * b; }\n`;
+    });
+    inner += "    }\n";
+  }
+  const actExpr = act === "gelu" ? "gelu4(v)" : act === "none" ? "v" : act === "relu" ? "max(v, vec4f(0.0))" :
+    "tanh(clamp(v * GAIN, vec4f(-15.0), vec4f(15.0)))";
+  return wgslCommon(P) + `
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read> A: array<vec4f>;
+@group(0) @binding(2) var<storage, read> B: array<vec4f>;
+@group(0) @binding(3) var<storage, read> bias: array<vec4f>;
+@group(0) @binding(4) var<storage, read_write> C: array<vec4f>;
+var<workgroup> As: array<vec4f, 256>;
+var<workgroup> Bs: array<vec4f, 256>;
+const KDIM: u32 = ${K}u;
+const K4: u32 = ${K / 4}u;
+const M4: u32 = ${M / 4}u;
+fn applyAct(v: vec4f) -> vec4f { return ${actExpr}; }
+@compute @workgroup_size(16, 16)
+fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+  let tx = lid.x;
+  let ty = lid.y;
+  let tid = ty * 16u + tx;
+  let row0 = wg.y * 64u;
+  let col40 = wg.x * 16u;
+  let aRow = row0 + tid / 4u;
+  let aCol = tid % 4u;
+  let bRow = tid / 16u;
+  let bCol = tid % 16u;
+  var acc0 = vec4f(0.0);
+  var acc1 = vec4f(0.0);
+  var acc2 = vec4f(0.0);
+  var acc3 = vec4f(0.0);
+  for (var k0 = 0u; k0 < KDIM; k0 = k0 + 16u) {
+    var av = vec4f(0.0);
+    if (aRow < prm.n) { av = A[aRow * K4 + k0 / 4u + aCol]; }
+    As[tid] = av;
+    Bs[tid] = B[(k0 + bRow) * M4 + col40 + bCol];
+    workgroupBarrier();
+${inner}    workgroupBarrier();
+  }
+  let bv = bias[col40 + tx];
+  let r = row0 + ty * 4u;
+  if (r < prm.n) { C[r * M4 + col40 + tx] = applyAct(acc0 + bv); }
+  if (r + 1u < prm.n) { C[(r + 1u) * M4 + col40 + tx] = applyAct(acc1 + bv); }
+  if (r + 2u < prm.n) { C[(r + 2u) * M4 + col40 + tx] = applyAct(acc2 + bv); }
+  if (r + 3u < prm.n) { C[(r + 3u) * M4 + col40 + tx] = applyAct(acc3 + bv); }
+}`;
+}
+function wgslNormalize(P) {
+  return wgslCommon(P) + `
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read_write> C: array<vec4f>;
+var<workgroup> red: array<f32, 256>;
+const R4: u32 = ${P.out / 4}u;
+@compute @workgroup_size(256)
+fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+  let r = wg.x;
+  if (r >= prm.n) { return; }
+  let v = C[r * R4 + lid.x];
+  red[lid.x] = dot(v, v);
+  workgroupBarrier();
+  for (var s = 128u; s > 0u; s = s >> 1u) {
+    if (lid.x < s) { red[lid.x] = red[lid.x] + red[lid.x + s]; }
+    workgroupBarrier();
+  }
+  let nrm = max(sqrt(red[0]), 1e-12);
+  C[r * R4 + lid.x] = v / nrm;
+}`;
+}
+function wgslExtract(P) {
+  return wgslCommon(P) + `
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read> C: array<f32>;
+@group(0) @binding(2) var<storage, read> unitIdx: array<u32>;
+@group(0) @binding(3) var<storage, read_write> E: array<f32>;
+const OUTD: u32 = ${P.out}u;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) g: vec3u, @builtin(num_workgroups) nw: vec3u) {
+  let i = g.x + g.y * nw.x * 64u;
+  if (i >= prm.n * prm.K) { return; }
+  let r = i / prm.K;
+  let k = i - r * prm.K;
+  E[i] = C[r * OUTD + unitIdx[k]];
+}`;
+}
+
+// The rotated ideal on the GPU. One workgroup per cell builds the cell's D ideal values from the
+// trig table, applies the sign rounds and Walsh-Hadamard stages in workgroup memory in the order
+// idealRotCompute uses, and writes only the requested units.
+function wgslRot(R) {
+  return `
+struct Params { n: u32, start: u32, S: u32, x0: u32, y0: u32, K: u32, p1: u32, p2: u32 };
+const NPOS: u32 = ${R.npos}u;
+const NF: u32 = ${R.nf}u;
+const D: u32 = ${R.D}u;
+const ROUNDS: u32 = ${R.rounds}u;
+const AMP: f32 = ${R.amp};
+const SCALE: f32 = ${R.scale};
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read> freqs: array<i32>;
+@group(0) @binding(2) var<storage, read> signs: array<f32>;
+@group(0) @binding(3) var<storage, read> trig: array<f32>;
+@group(0) @binding(4) var<storage, read> unitIdx: array<u32>;
+@group(0) @binding(5) var<storage, read_write> E: array<f32>;
+var<workgroup> v: array<f32, ${R.D}>;
+fn modn(a: i32) -> u32 {
+  let n = i32(NPOS);
+  let r = a % n;
+  return u32(select(r, r + n, r < 0));
+}
+@compute @workgroup_size(256)
+fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+  let i = wg.x;
+  if (i >= prm.n) { return; }
+  let c = prm.start + i;
+  let row = c / prm.S;
+  let col = c - row * prm.S;
+  let x = i32((prm.x0 + col) % NPOS);
+  let y = i32((prm.y0 + row) % NPOS);
+  let t = lid.x;
+  for (var w = t; w < NF; w = w + 256u) {
+    var k = modn(freqs[2u * w] * x) + modn(freqs[2u * w + 1u] * y);
+    if (k >= NPOS) { k = k - NPOS; }
+    v[w] = AMP * trig[k];
+    v[w + NF] = AMP * trig[NPOS + k];
+  }
+  workgroupBarrier();
+  for (var r = 0u; r < ROUNDS; r = r + 1u) {
+    for (var e = t; e < D; e = e + 256u) { v[e] = v[e] * signs[r * D + e]; }
+    workgroupBarrier();
+    for (var h = 1u; h < D; h = h << 1u) {
+      for (var b = t; b < D / 2u; b = b + 256u) {
+        let j = (b / h) * (h << 1u) + (b % h);
+        let lo = v[j];
+        let hi = v[j + h];
+        v[j] = lo + hi;
+        v[j + h] = lo - hi;
+      }
+      workgroupBarrier();
+    }
+  }
+  for (var q = t; q < prm.K; q = q + 256u) { E[i * prm.K + q] = v[unitIdx[q]] * SCALE; }
+}`;
+}
+
+// The ideal code at each cell of a chunk, cell-major (cell i, coordinate j at i * D + j), as the
+// input of the place-field rotation's matrix multiply.
+function wgslIdealCode(R) {
+  return `
+struct Params { n: u32, start: u32, S: u32, x0: u32, y0: u32, K: u32, p1: u32, p2: u32 };
+const NPOS: u32 = ${R.npos}u;
+const NF: u32 = ${R.nf}u;
+const D: u32 = ${R.D}u;
+const AMP: f32 = ${R.amp};
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read> freqs: array<i32>;
+@group(0) @binding(2) var<storage, read> trig: array<f32>;
+@group(0) @binding(3) var<storage, read_write> Z: array<f32>;
+fn modn(a: i32) -> u32 {
+  let n = i32(NPOS);
+  let r = a % n;
+  return u32(select(r, r + n, r < 0));
+}
+@compute @workgroup_size(256)
+fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+  let i = wg.x;
+  if (i >= prm.n) { return; }
+  let c = prm.start + i;
+  let row = c / prm.S;
+  let col = c - row * prm.S;
+  let x = i32((prm.x0 + col) % NPOS);
+  let y = i32((prm.y0 + row) % NPOS);
+  for (var w = lid.x; w < NF; w = w + 256u) {
+    var k = modn(freqs[2u * w] * x) + modn(freqs[2u * w + 1u] * y);
+    if (k >= NPOS) { k = k - NPOS; }
+    Z[i * D + w] = AMP * trig[k];
+    Z[i * D + w + NF] = AMP * trig[NPOS + k];
+  }
+}`;
+}
+
+// Accumulates a read-back chunk (cell-major, n x K, rows ld apart) into unit-major pooled maps.
+function scatterChunk(out, ch, s, n, K, S, pl, ld = K) {
+  const W = pl.W, WW = W * W;
+  if (pl.f === 1) {
+    for (let i = 0; i < n; i++) { const cell = s + i, b = i * ld; for (let q = 0; q < K; q++) out[q * WW + cell] = ch[b + q]; }
+  } else {
+    for (let i = 0; i < n; i++) {
+      const cell = s + i, r = (cell / S) | 0, c = cell - r * S, blk = pl.bi[r] * W + pl.bi[c], b = i * ld;
+      for (let q = 0; q < K; q++) out[q * WW + blk] += ch[b + q];
+    }
+  }
+}
+
+async function makeWebGpuEngine() {
+  if (!navigator.gpu) throw new Error("this browser has no WebGPU");
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  if (!adapter) throw new Error("no WebGPU adapter");
+  const dev = await adapter.requestDevice();
+  dev.lost.then(info => {
+    st.engine = null;
+    st.engineError = "The GPU stopped responding (" + info.message + "). Reload the page.";
+    setStatus(st.engineError, true);
+  });
+  const any = st.mlp.trained;
+  for (const k of MLP_KEYS) {
+    const m = st.mlp[k];
+    if (m.hidden !== 256 || m.out !== 1024) throw new Error(k + ": the shaders expect 256 hidden units and 1024 outputs");
+    if (m.act !== "tanh" && m.act !== "relu") throw new Error(k + ": unknown output activation " + m.act);
+  }
+  const P = { npos: NPOS, hidden: any.hidden, out: any.out, lambdas: st.M.lambdas, rowOff: any.rowOff, gain: 1 };
+  const U = GPUBufferUsage;
+  const upload = arr => {
+    const b = dev.createBuffer({ size: Math.ceil(arr.byteLength / 16) * 16, usage: U.STORAGE | U.COPY_DST });
+    dev.queue.writeBuffer(b, 0, arr);
+    return b;
+  };
+  const sh = {
+    prm: dev.createBuffer({ size: 32, usage: U.UNIFORM | U.COPY_DST }),
+    hA: dev.createBuffer({ size: CHUNK * P.hidden * 4, usage: U.STORAGE }),
+    hB: dev.createBuffer({ size: CHUNK * P.hidden * 4, usage: U.STORAGE }),
+    out: dev.createBuffer({ size: CHUNK * P.out * 4, usage: U.STORAGE }),
+    units: dev.createBuffer({ size: P.out * 4, usage: U.STORAGE | U.COPY_DST }),
+    ext: dev.createBuffer({ size: EXT_FLOATS * 4, usage: U.STORAGE | U.COPY_SRC }),
+    map: dev.createBuffer({ size: EXT_FLOATS * 4, usage: U.MAP_READ | U.COPY_DST }),
+  };
+  dev.pushErrorScope("validation");
+  const compile = async (code, label) => {
+    const module = dev.createShaderModule({ code, label });
+    const info = await module.getCompilationInfo();
+    const errs = info.messages.filter(m => m.type === "error");
+    if (errs.length) throw new Error(label + " shader: " + errs.map(m => "line " + m.lineNum + ": " + m.message).join("; "));
+    return dev.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint: "main" }, label });
+  };
+  const [pL1, pMM, pNorm, pExt] = await Promise.all([
+    compile(wgslLayer1(P), "layer 1"), compile(wgslMatmul(P, 256, 256, "gelu"), "hidden matmul"),
+    compile(wgslNormalize(P), "normalize"), compile(wgslExtract(P), "extract")]);
+  const bg = (p, list) => dev.createBindGroup({
+    layout: p.getBindGroupLayout(0), entries: list.map((b, i) => ({ binding: i, resource: { buffer: b } })) });
+  const mm = M => n => [M / 64, Math.ceil(n / 64)];
+  const outPipes = {}, sets = {};
+  for (const k of MLP_KEYS) {
+    const m = st.mlp[k], pk = m.act + ":" + m.gain;
+    if (!outPipes[pk]) outPipes[pk] = await compile(wgslMatmul(Object.assign({}, P, { gain: m.gain }), 256, 1024, m.act), "output matmul");
+    const pOut = outPipes[pk];
+    const w = { T: upload(m.T), b1: upload(m.b1), W: m.W.map(upload), b: m.b.map(upload) };
+    sets[k] = [
+      { p: pL1, g: bg(pL1, [sh.prm, w.T, w.b1, sh.hA]), wg: n => [n, 1] },
+      { p: pMM, g: bg(pMM, [sh.prm, sh.hA, w.W[0], w.b[0], sh.hB]), wg: mm(P.hidden) },
+      { p: pMM, g: bg(pMM, [sh.prm, sh.hB, w.W[1], w.b[1], sh.hA]), wg: mm(P.hidden) },
+      { p: pMM, g: bg(pMM, [sh.prm, sh.hA, w.W[2], w.b[2], sh.hB]), wg: mm(P.hidden) },
+      { p: pOut, g: bg(pOut, [sh.prm, sh.hB, w.W[3], w.b[3], sh.out]), wg: mm(P.out) },
+      { p: pNorm, g: bg(pNorm, [sh.prm, sh.out]), wg: n => [n, 1] },
+    ];
+  }
+  const ext = { p: pExt, g: bg(pExt, [sh.prm, sh.out, sh.units, sh.ext]) };
+  // The rotated ideal shares the parameter, unit-list and read-back buffers. It gets its own
+  // validation scope so a problem with it leaves the encoders on WebGPU.
+  const rotMeta = st.M.populations.ideal_rot, idealMeta = st.M.populations.ideal;
+  const trig = new Float32Array(2 * NPOS);
+  for (let k = 0; k < NPOS; k++) { const th = 2 * Math.PI * k / NPOS; trig[k] = Math.cos(th); trig[NPOS + k] = Math.sin(th); }
+  let rot = null;
+  if (rotMeta && idealMeta && 2 * idealMeta.freqs.length <= P.out) {
+    const nf = idealMeta.freqs.length, D = 2 * nf, rounds = rotMeta.signs.length;
+    let rotErr = null, made = null;
+    dev.pushErrorScope("validation");
+    try {
+      const pRot = await compile(wgslRot({ npos: NPOS, nf, D, rounds, amp: idealMeta.amp, scale: Math.pow(D, -rounds / 2) }), "rotated ideal");
+      const freqs = dev.createBuffer({ size: D * 4, usage: U.STORAGE | U.COPY_DST });
+      made = { p: pRot, freqs, fkey: null,
+               g: bg(pRot, [sh.prm, freqs, upload(Float32Array.from(rotMeta.signs.flat())), upload(trig), sh.units, sh.ext]) };
+    } catch (e) { rotErr = errText(e); }
+    const ve = await dev.popErrorScope();
+    if (ve && !rotErr) rotErr = ve.message;
+    if (rotErr) st.rotGpuError = rotErr; else rot = made;
+  }
+  // The place-field rotation: wgslIdealCode writes the ideal code of each cell into sh.out, then the
+  // encoders' matrix multiply (no activation) applies the requested rows of Q, uploaded as the columns
+  // of B and padded to a multiple of 64, writing straight into the read-back buffer. One pipeline per
+  // padded width, compiled on first use. Its own validation scope, like the rotated ideal's.
+  const placePop = st.pops.ideal_place;
+  let place = null;
+  if (placePop && idealMeta && 2 * idealMeta.freqs.length <= P.out) {
+    const nf = idealMeta.freqs.length, D = 2 * nf;
+    let placeErr = null, made = null;
+    dev.pushErrorScope("validation");
+    try {
+      const pZ = await compile(wgslIdealCode({ npos: NPOS, nf, D, amp: idealMeta.amp }), "ideal code");
+      const p64 = await compile(wgslMatmul(P, D, 64, "none"), "place-field matmul");
+      made = { D, pipes: new Map([[64, p64]]), groups: new Map(), bkey: null,
+               B: dev.createBuffer({ size: D * D * 4, usage: U.STORAGE | U.COPY_DST }),
+               zeros: dev.createBuffer({ size: D * 4, usage: U.STORAGE }),
+               z: { p: pZ, g: bg(pZ, [sh.prm, upload(placePop.F), upload(trig), sh.out]) } };
+    } catch (e) { placeErr = errText(e); }
+    const ve = await dev.popErrorScope();
+    if (ve && !placeErr) placeErr = ve.message;
+    if (placeErr) st.placeGpuError = placeErr; else place = made;
+  }
+  const err = await dev.popErrorScope();
+  if (err) throw new Error("WebGPU validation: " + err.message);
+
+  async function run(key, units, a) {
+    const K = units.length, S = a.S, N = S * S, pl = poolPlan(S), WW = pl.W * pl.W;
+    const out = new Float32Array(K * WW);
+    dev.queue.writeBuffer(sh.units, 0, Uint32Array.from(units));
+    const per = Math.min(CHUNK, Math.floor(EXT_FLOATS / K));
+    for (let s = 0; s < N; s += per) {
+      const n = Math.min(per, N - s);
+      dev.queue.writeBuffer(sh.prm, 0, new Uint32Array([n, s, S, a.x0, a.y0, K, 0, 0]));
+      const enc = dev.createCommandEncoder(), pass = enc.beginComputePass();
+      for (const p of sets[key]) { pass.setPipeline(p.p); pass.setBindGroup(0, p.g); const [x, y] = p.wg(n); pass.dispatchWorkgroups(x, y); }
+      const groups = Math.ceil(n * K / 64), wx = Math.min(groups, 32768);
+      pass.setPipeline(ext.p); pass.setBindGroup(0, ext.g); pass.dispatchWorkgroups(wx, Math.ceil(groups / wx));
+      pass.end();
+      const bytes = n * K * 4;
+      enc.copyBufferToBuffer(sh.ext, 0, sh.map, 0, bytes);
+      dev.queue.submit([enc.finish()]);
+      await sh.map.mapAsync(GPUMapMode.READ, 0, bytes);
+      scatterChunk(out, new Float32Array(sh.map.getMappedRange(0, bytes)), s, n, K, S, pl);
+      sh.map.unmap();
+    }
+    finishPool(out, K, pl);
+    return { data: out, W: pl.W, f: pl.f };
+  }
+  async function runRot(units, a, F, fkey) {
+    if (rot.fkey !== fkey) { dev.queue.writeBuffer(rot.freqs, 0, F); rot.fkey = fkey; }
+    const K = units.length, S = a.S, N = S * S, pl = poolPlan(S), WW = pl.W * pl.W;
+    const out = new Float32Array(K * WW);
+    dev.queue.writeBuffer(sh.units, 0, Uint32Array.from(units));
+    const per = Math.min(CHUNK, Math.floor(EXT_FLOATS / K));
+    for (let s = 0; s < N; s += per) {
+      const n = Math.min(per, N - s);
+      dev.queue.writeBuffer(sh.prm, 0, new Uint32Array([n, s, S, a.x0, a.y0, K, 0, 0]));
+      const enc = dev.createCommandEncoder(), pass = enc.beginComputePass();
+      pass.setPipeline(rot.p); pass.setBindGroup(0, rot.g); pass.dispatchWorkgroups(n, 1);
+      pass.end();
+      const bytes = n * K * 4;
+      enc.copyBufferToBuffer(sh.ext, 0, sh.map, 0, bytes);
+      dev.queue.submit([enc.finish()]);
+      await sh.map.mapAsync(GPUMapMode.READ, 0, bytes);
+      scatterChunk(out, new Float32Array(sh.map.getMappedRange(0, bytes)), s, n, K, S, pl);
+      sh.map.unmap();
+    }
+    finishPool(out, K, pl);
+    return { data: out, W: pl.W, f: pl.f };
+  }
+  async function placeStep(M) {
+    if (!place.pipes.has(M)) place.pipes.set(M, await compile(wgslMatmul(P, place.D, M, "none"), "place-field matmul"));
+    if (!place.groups.has(M)) place.groups.set(M, bg(place.pipes.get(M), [sh.prm, sh.out, place.B, place.zeros, sh.ext]));
+    return { p: place.pipes.get(M), g: place.groups.get(M) };
+  }
+  async function runPlace(units, a) {
+    const K = units.length, Kp = Math.ceil(K / 64) * 64, D = place.D, mmStep = await placeStep(Kp);
+    const bkey = Kp + ":" + units.join(",");
+    if (place.bkey !== bkey) {
+      const Bt = new Float32Array(D * Kp), Q = placePop.Q;
+      for (let q = 0; q < Kp; q++) { const row = units[Math.min(q, K - 1)] * D; for (let k = 0; k < D; k++) Bt[k * Kp + q] = Q[row + k]; }
+      dev.queue.writeBuffer(place.B, 0, Bt);
+      place.bkey = bkey;
+    }
+    const S = a.S, N = S * S, pl = poolPlan(S), WW = pl.W * pl.W;
+    const out = new Float32Array(K * WW);
+    const per = Math.min(CHUNK, Math.floor(EXT_FLOATS / Kp));
+    for (let s = 0; s < N; s += per) {
+      const n = Math.min(per, N - s);
+      dev.queue.writeBuffer(sh.prm, 0, new Uint32Array([n, s, S, a.x0, a.y0, Kp, 0, 0]));
+      const enc = dev.createCommandEncoder(), pass = enc.beginComputePass();
+      pass.setPipeline(place.z.p); pass.setBindGroup(0, place.z.g); pass.dispatchWorkgroups(n, 1);
+      pass.setPipeline(mmStep.p); pass.setBindGroup(0, mmStep.g); pass.dispatchWorkgroups(Kp / 64, Math.ceil(n / 64));
+      pass.end();
+      const bytes = n * Kp * 4;
+      enc.copyBufferToBuffer(sh.ext, 0, sh.map, 0, bytes);
+      dev.queue.submit([enc.finish()]);
+      await sh.map.mapAsync(GPUMapMode.READ, 0, bytes);
+      scatterChunk(out, new Float32Array(sh.map.getMappedRange(0, bytes)), s, n, K, S, pl, Kp);
+      sh.map.unmap();
+    }
+    finishPool(out, K, pl);
+    return { data: out, W: pl.W, f: pl.f };
+  }
+  const ai = adapter.info || {};
+  return {
+    name: "WebGPU", adapter: [ai.vendor, ai.architecture].filter(Boolean).join(" "),
+    maps: (key, units, a) => gpuLock(() => run(key, units, a)),
+    rotMaps: rot ? (units, a, F, fkey) => gpuLock(() => runRot(units, a, F, fkey)) : null,
+    placeMaps: place ? (units, a) => gpuLock(() => runPlace(units, a)) : null,
+  };
+}
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error("could not load " + src));
+    document.head.appendChild(s);
+  });
+}
+function tfErfPoly(x) {
+  const a = tf.abs(x), t = tf.div(1, tf.add(1, tf.mul(a, 0.3275911)));
+  let p = tf.add(tf.mul(t, 1.061405429), -1.453152027);
+  p = tf.add(tf.mul(p, t), 1.421413741);
+  p = tf.add(tf.mul(p, t), -0.284496736);
+  p = tf.add(tf.mul(p, t), 0.254829592);
+  p = tf.mul(p, t);
+  return tf.mul(tf.sign(x), tf.sub(1, tf.mul(p, tf.exp(tf.neg(tf.square(a))))));
+}
+async function makeTfEngine() {
+  if (!window.tf) await loadScript(TF_URL);
+  let ok = false;
+  try { ok = await tf.setBackend("webgl"); } catch (e) { throw new Error("tf.js WebGL backend: " + errText(e)); }
+  if (!ok) throw new Error("tf.js could not start its WebGL backend");
+  await tf.ready();
+  let erfOk = false;
+  try { erfOk = !!tf.getKernel("Erf", "webgl"); } catch (e) { erfOk = false; }
+  const gelu = x => { const u = tf.mul(x, Math.SQRT1_2); return tf.mul(tf.mul(x, 0.5), tf.add(erfOk ? tf.erf(u) : tfErfPoly(u), 1)); };
+  const sets = {};
+  for (const k of MLP_KEYS) {
+    const m = st.mlp[k];
+    sets[k] = { m, T: tf.tensor2d(m.T, [m.T.length / m.hidden, m.hidden]), b1: tf.tensor1d(m.b1),
+                W: m.W.map((w, i) => tf.tensor2d(w, [m.hidden, i < 3 ? m.hidden : m.out])), b: m.b.map(x => tf.tensor1d(x)) };
+  }
+  const L = st.M.lambdas;
+  function forward(w, a, start, n) {
+    const O = w.m.rowOff, idx = [new Int32Array(n), new Int32Array(n), new Int32Array(n)];
+    for (let i = 0; i < n; i++) {
+      const c = start + i, r = Math.floor(c / a.S), col = c - r * a.S;
+      const x = (a.x0 + col) % NPOS, y = (a.y0 + r) % NPOS;
+      for (let m = 0; m < 3; m++) idx[m][i] = O[m] + (x % L[m]) * L[m] + (y % L[m]);
+    }
+    return tf.tidy(() => {
+      let h = tf.gather(w.T, tf.tensor1d(idx[0], "int32"));
+      h = tf.add(h, tf.gather(w.T, tf.tensor1d(idx[1], "int32")));
+      h = tf.add(h, tf.gather(w.T, tf.tensor1d(idx[2], "int32")));
+      h = gelu(tf.add(h, w.b1));
+      for (let l = 0; l < 3; l++) h = gelu(tf.add(tf.matMul(h, w.W[l]), w.b[l]));
+      const v = tf.add(tf.matMul(h, w.W[3]), w.b[3]);
+      const z = w.m.act === "relu" ? tf.relu(v) : tf.tanh(tf.clipByValue(tf.mul(v, w.m.gain), -15, 15));
+      return tf.div(z, tf.maximum(tf.sqrt(tf.sum(tf.square(z), 1, true)), 1e-12));
+    });
+  }
+  async function run(key, units, a) {
+    const w = sets[key], K = units.length, S = a.S, N = S * S, pl = poolPlan(S);
+    const out = new Float32Array(K * pl.W * pl.W), uT = tf.tensor1d(Int32Array.from(units), "int32");
+    for (let s = 0; s < N; s += CHUNK) {
+      const n = Math.min(CHUNK, N - s);
+      const g = tf.tidy(() => tf.gather(forward(w, a, s, n), uT, 1));
+      const d = await g.data();
+      g.dispose();
+      scatterChunk(out, d, s, n, K, S, pl);
+    }
+    uT.dispose();
+    finishPool(out, K, pl);
+    return { data: out, W: pl.W, f: pl.f };
+  }
+  return { name: "WebGL (tf.js)", adapter: "", maps: (key, units, a) => gpuLock(() => run(key, units, a)) };
+}
+
+async function initEngine() {
+  try { st.engine = await makeWebGpuEngine(); }
+  catch (e) {
+    st.engineNote = "WebGPU is unavailable here (" + errText(e) + "), so the encoders run on WebGL through tf.js, about four times slower.";
+    try { st.engine = await makeTfEngine(); }
+    catch (e2) { st.engine = null; st.engineError = "No GPU engine could start: " + errText(e2) + ". Grid, ideal and hippocampus still work."; }
+  }
+  updateEngineNote();
+}
+function updateEngineNote() {
+  const parts = [], onGpu = ["Encoders"];
+  if (st.engine && st.engine.rotMaps) onGpu.push("the rotated ideal");
+  if (st.engine && st.engine.placeMaps) onGpu.push("the place-field rotation");
+  const who = onGpu.length < 3 ? onGpu.join(" and ") : onGpu.slice(0, -1).join(", ") + " and " + onGpu[onGpu.length - 1];
+  if (st.engine) parts.push(who + " run on " + st.engine.name + (st.engine.adapter ? " (" + st.engine.adapter + ")" : "") + ".");
+  if (st.engineNote) parts.push(st.engineNote);
+  if (st.rotGpuError) parts.push("The rotated ideal could not use the GPU (" + st.rotGpuError + ").");
+  if (st.placeGpuError) parts.push("The place-field rotation could not use the GPU (" + st.placeGpuError + ").");
+  if (!st.engine && st.engineError) parts.push(st.engineError);
+  parts.push(wk.w ? "Maps computed in JavaScript run on a background thread."
+                  : "Maps computed in JavaScript run on the page's main thread" + (wk.note ? " because " + wk.note : "") + ".");
+  $("engine").textContent = parts.join(" ");
+}
+
+// ================================================================ rate-map processing
+// Scratch arrays are kept across frames, so dragging does not churn the garbage collector.
+const scratch = { stack: new Int32Array(0), labels: new Int32Array(0), tmp: new Float32Array(0) };
+function grow(buf, n, Ctor) { return buf && buf.length >= n ? buf : new Ctor(n); }
+// Gaussian smoothing in place, normalised at the arena edge.
+function smoothMap(v, W, sigma) {
+  const R = Math.ceil(3 * sigma), w = new Float64Array(2 * R + 1);
+  for (let k = -R; k <= R; k++) w[k + R] = Math.exp(-(k * k) / (2 * sigma * sigma));
+  const tmp = scratch.tmp = grow(scratch.tmp, W * W, Float32Array);
+  for (let r = 0; r < W; r++) for (let c = 0; c < W; c++) {
+    let s = 0, ws = 0;
+    const lo = Math.max(-R, -c), hi = Math.min(R, W - 1 - c);
+    for (let k = lo; k <= hi; k++) { s += w[k + R] * v[r * W + c + k]; ws += w[k + R]; }
+    tmp[r * W + c] = s / ws;
+  }
+  for (let r = 0; r < W; r++) for (let c = 0; c < W; c++) {
+    let s = 0, ws = 0;
+    const lo = Math.max(-R, -r), hi = Math.min(R, W - 1 - r);
+    for (let k = lo; k <= hi; k++) { s += w[k + R] * tmp[(r + k) * W + c]; ws += w[k + R]; }
+    v[r * W + c] = s / ws;
+  }
+}
+
+// One unit's processed map and statistics, written into o.dest. Sizes and positions are in cells.
+// o.labels: a buffer that keeps the field labels for the outlines, or null.
+// o.lite: skip field detection, for frames drawn while the arena is moving.
+function processUnit(data, off, W, f, filt, o) {
+  const WW = W * W, v = o.dest;
+  for (let i = 0; i < WW; i++) { const x = data[off + i]; v[i] = filt.rectify ? (x > 0 ? x : 0) : x; }
+  if (filt.sigma > 0) smoothMap(v, W, filt.sigma / f);
+  let vmin = Infinity, vmax = -Infinity, peak = 0, peakI = -1, tot = 0;
+  for (let i = 0; i < WW; i++) {
+    const x = v[i];
+    tot += x;
+    if (x < vmin) vmin = x;
+    if (x > vmax) vmax = x;
+    if (x > peak) { peak = x; peakI = i; }
+  }
+  const mean = tot / WW;
+  let nFields = o.lite ? NaN : 0, fieldCells = 0, maxField = 0, labels = null, keep = null;
+  if (peak > 0 && !o.lite) {
+    // At a 0% threshold a cell is in a field when it is above zero (the unit is active there).
+    const thr = filt.thresh > 0 ? filt.thresh / 100 * peak : Number.MIN_VALUE, minB = Math.max(1, Math.ceil(filt.minSize / (f * f)));
+    labels = o.labels || (scratch.labels = grow(scratch.labels, WW, Int32Array));
+    labels.fill(0, 0, WW);
+    const stack = scratch.stack = grow(scratch.stack, WW, Int32Array);
+    keep = [false];
+    let next = 1;
+    for (let i = 0; i < WW; i++) {
+      if (labels[i] !== 0 || !(v[i] >= thr)) continue;
+      let sp = 0, size = 0;
+      stack[sp++] = i; labels[i] = next;
+      while (sp) {
+        const j = stack[--sp], r = (j / W) | 0, c = j - r * W;
+        size++;
+        if (c > 0 && labels[j - 1] === 0 && v[j - 1] >= thr) { labels[j - 1] = next; stack[sp++] = j - 1; }
+        if (c < W - 1 && labels[j + 1] === 0 && v[j + 1] >= thr) { labels[j + 1] = next; stack[sp++] = j + 1; }
+        if (r > 0 && labels[j - W] === 0 && v[j - W] >= thr) { labels[j - W] = next; stack[sp++] = j - W; }
+        if (r < W - 1 && labels[j + W] === 0 && v[j + W] >= thr) { labels[j + W] = next; stack[sp++] = j + W; }
+      }
+      const ok = size >= minB;
+      keep.push(ok);
+      if (ok) { nFields++; fieldCells += size; if (size > maxField) maxField = size; }
+      next++;
+    }
+  }
+  const peakR = peakI < 0 ? -1 : (peakI / W) | 0, peakC = peakI < 0 ? -1 : peakI - peakR * W;
+  return {
+    v, vmin, vmax, peak, peakR, peakC, mean, nFields,
+    meanField: nFields ? fieldCells * f * f / nFields : NaN, maxField: maxField * f * f,
+    peakKey: peakI < 0 ? NaN : (W - 1 - peakR) * W + peakC,
+    labels: o.labels ? labels : null, keep: o.labels ? keep : null,
+  };
+}
+
+// ================================================================ drawing
+// Each canvas keeps its context and pixel buffer between frames.
+function drawMap(cv, v, W, lo, hi, lut, maxRes) {
+  const f = Math.max(1, Math.ceil(W / maxRes)), D = Math.ceil(W / f);
+  if (cv.width !== D || cv.height !== D) { cv.width = D; cv.height = D; cv._img = null; }
+  const ctx = cv._ctx || (cv._ctx = cv.getContext("2d"));
+  const img = cv._img || (cv._img = ctx.createImageData(D, D)), d = img.data;
+  const span = hi - lo, flat = !(span > 0), midT = lo < 0 ? 0.5 : 0;
+  for (let R = 0; R < D; R++) {
+    const r0 = R * f, r1 = Math.min(W, r0 + f);
+    for (let C = 0; C < D; C++) {
+      const c0 = C * f, c1 = Math.min(W, c0 + f);
+      let val;
+      if (f === 1) val = v[r0 * W + c0];
+      else { let s = 0; for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) s += v[r * W + c]; val = s / ((r1 - r0) * (c1 - c0)); }
+      let t = flat ? midT : (val - lo) / span;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const li = ((t * 255 + 0.5) | 0) * 3, o = ((D - 1 - R) * D + C) * 4;
+      d[o] = lut[li]; d[o + 1] = lut[li + 1]; d[o + 2] = lut[li + 2]; d[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function drawOutlines(cv, res, W) {
+  const dpr = window.devicePixelRatio || 1, px = Math.max(1, Math.round(cv.clientWidth * dpr));
+  if (cv.width !== px || cv.height !== px) { cv.width = px; cv.height = px; }
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, px, px);
+  if (!st.outlines || !res.labels) return;
+  const k = px / W, lab = res.labels, keep = res.keep;
+  ctx.strokeStyle = OUTLINE; ctx.lineWidth = Math.max(1.5, 2 * dpr); ctx.lineCap = "square";
+  ctx.beginPath();
+  for (let r = 0; r < W; r++) for (let c = 0; c < W; c++) {
+    const i = r * W + c, L = lab[i];
+    if (!L || !keep[L]) continue;
+    const x = c * k, yTop = (W - 1 - r) * k;
+    if (c === 0 || lab[i - 1] !== L) { ctx.moveTo(x, yTop); ctx.lineTo(x, yTop + k); }
+    if (c === W - 1 || lab[i + 1] !== L) { ctx.moveTo(x + k, yTop); ctx.lineTo(x + k, yTop + k); }
+    if (r === W - 1 || lab[i + W] !== L) { ctx.moveTo(x, yTop); ctx.lineTo(x + k, yTop); }
+    if (r === 0 || lab[i - W] !== L) { ctx.moveTo(x, yTop + k); ctx.lineTo(x + k, yTop + k); }
+  }
+  ctx.stroke();
+}
+function drawColorbar(lut) {
+  const cv = $("d-bar"), ctx = cv.getContext("2d"), img = ctx.createImageData(256, 1);
+  for (let i = 0; i < 256; i++) { img.data[i * 4] = lut[i * 3]; img.data[i * 4 + 1] = lut[i * 3 + 1]; img.data[i * 4 + 2] = lut[i * 3 + 2]; img.data[i * 4 + 3] = 255; }
+  ctx.putImageData(img, 0, 0);
+}
+function rangeFor(r, div) {
+  if (div) { const a = Math.max(Math.abs(r.vmin), Math.abs(r.vmax)); return [-a, a]; }
+  return [0, Math.max(r.vmax, 0)];
+}
+
+// ================================================================ minimap
+function drawMinimap() {
+  const cv = $("minimap"), dpr = window.devicePixelRatio || 1, px = Math.max(1, Math.round((cv.clientWidth || 220) * dpr));
+  if (cv.width !== px) { cv.width = px; cv.height = px; }
+  const ctx = cv.getContext("2d"), k = px / NPOS, col = MM_COL;
+  ctx.fillStyle = col.bg;
+  ctx.fillRect(0, 0, px, px);
+  const rect = (x0, y0, S, fill) => {
+    for (const dx of [0, -NPOS]) for (const dy of [0, -NPOS]) {
+      const w = Math.max(S * k, fill ? 2 * dpr : 4 * dpr), x = (x0 + dx) * k, y = (NPOS - (y0 + dy) - S) * k;
+      if (x > px || y > px || x + w < 0 || y + w < 0) continue;
+      if (fill) ctx.fillRect(x, y, w, w); else ctx.strokeRect(x, y, w, w);
+    }
+  };
+  if (st.M) {
+    ctx.fillStyle = col.dots;
+    ctx.globalAlpha = 0.55;
+    for (const r of st.M.arenas) rect(r.x0, r.y0, r.S, true);
+    ctx.globalAlpha = 1;
+  }
+  ctx.strokeStyle = col.ring;
+  ctx.lineWidth = 2 * dpr;
+  rect(st.x0, st.y0, st.S, false);
+}
+
+// ================================================================ sorting
+const SORTS = {
+  id: { label: "Unit order" },
+  centre: { label: "Field centre in arena", centres: true },
+  random: { label: "Random" },
+  fields: { label: "Most fields", stat: true, key: r => r.nFields, desc: true },
+  fieldsize: { label: "Largest fields", stat: true, key: r => r.meanField, desc: true },
+  peak: { label: "Peak position", stat: true, key: r => r.peakKey, desc: false },
+};
+function cmpKeys(a, b, desc) {
+  const na = Number.isNaN(a), nb = Number.isNaN(b);
+  if (na || nb) return na === nb ? 0 : na ? 1 : -1;
+  return desc ? b - a : a - b;
+}
+function mulberry32(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+// The processing actually applied: raw output ignores the rate-map settings.
+function eff() {
+  const rate = st.mode === "rate";
+  return { rectify: rate && st.f.rectify, sigma: rate ? st.f.sigma : 0, thresh: st.f.thresh, minSize: st.f.minSize };
+}
+const viewKey = () => JSON.stringify([st.popKey, st.x0, st.y0, st.S, eff(), isIdealPop(st.popKey) ? st.nmin : 0,
+                                      st.popKey === "rect" ? rectKey() : ""]);
+function currentOrder(pop) {
+  if (st.order && st.orderPop === pop.key) return st.order;
+  return Array.from({ length: pop.n }, (_, i) => i);
+}
+function shuffleOrder() {
+  const pop = st.pops[st.popKey], ids = Array.from({ length: pop.n }, (_, i) => i), rnd = mulberry32(st.shuffleSeed);
+  for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+  st.order = ids; st.orderPop = pop.key; st.sortedFor = viewKey(); st.page = 0; st.sel = ids[0];
+}
+// Populations built around field centres (meta.centres, the place-field rotation) can list the units
+// whose centre lies in the arena first, ordered by the centre's distance from the arena's middle (the
+// larger of the two torus axis distances, so every unit centred inside comes before any outside). It
+// needs no maps, so it is redone whenever the arena moves.
+const hasCentres = pop => !!(pop && pop.meta.centres);
+function centreOrder() {
+  const pop = st.pops[st.popKey], cs = pop.meta.centres, mx = st.x0 + (st.S - 1) / 2, my = st.y0 + (st.S - 1) / 2;
+  const tor = d => { d = mod(d, NPOS); return Math.min(d, NPOS - d); };
+  const key = cs.map(c => { const dx = tor(c[0] - mx), dy = tor(c[1] - my); return Math.max(dx, dy) + 1e-6 * Math.hypot(dx, dy); });
+  st.order = Array.from({ length: pop.n }, (_, i) => i).sort((p, q) => key[p] - key[q] || p - q);
+  st.orderPop = pop.key; st.sortedFor = viewKey(); st.page = 0;
+}
+function centresInArena() {
+  return st.pops[st.popKey].meta.centres.filter(c => mod(c[0] - st.x0, NPOS) < st.S && mod(c[1] - st.y0, NPOS) < st.S).length;
+}
+function syncSortOptions() {
+  const opt = $("sort").querySelector('option[value="centre"]'), on = hasCentres(st.pops[st.popKey]);
+  if (opt) { opt.hidden = !on; opt.disabled = !on; }
+  $("sort").value = st.sort;
+}
+function updateSortNote() {
+  const s = SORTS[st.sort], note = $("sort-note"), btn = $("resort");
+  if (st.sort === "id") { note.textContent = ""; btn.disabled = true; return; }
+  if (st.sort === "centre") {
+    const n = centresInArena(), pop = st.pops[st.popKey];
+    note.textContent = n + " of " + pop.n + " units have their field centre in this arena. They come first; the rest show only their ripple here.";
+    btn.disabled = true;
+    return;
+  }
+  if (st.sort === "random") { note.textContent = "Shuffled. Re-sort draws a new order."; btn.disabled = false; return; }
+  const fresh = st.sortedFor === viewKey() && st.orderPop === st.popKey;
+  note.textContent = fresh ? "Sorted for this arena and these filters." : "Sorted for an earlier view. Re-sort to update.";
+  btn.disabled = fresh;
+}
+async function computeSort() {
+  const sort = SORTS[st.sort], pop = st.pops[st.popKey];
+  if (!sort.stat) return;
+  const token = ++st.sortToken, a = { x0: st.x0, y0: st.y0, S: st.S }, filt = eff(), vk = viewKey();
+  const keys = new Float64Array(pop.n);
+  $("resort").disabled = true;
+  $("sort-note").textContent = "Sorting…";
+  for (let u0 = 0; u0 < pop.n; u0 += STAT_BATCH) {
+    const units = [];
+    for (let u = u0; u < Math.min(pop.n, u0 + STAT_BATCH); u++) units.push(u);
+    let res;
+    try { res = await pop.maps(units, a); }
+    catch (e) { if (token === st.sortToken) $("sort-note").textContent = "Sorting failed: " + errText(e); return; }
+    const WW = res.W * res.W, dest = st.bufs.sort = grow(st.bufs.sort, WW, Float32Array);
+    units.forEach((u, q) => { keys[u] = sort.key(processUnit(res.data, q * WW, res.W, res.f, filt, { dest, lite: false, labels: null })); });
+    recycle(res);
+    if (token !== st.sortToken) return;
+    $("sort-note").textContent = "Sorting: " + Math.min(pop.n, u0 + STAT_BATCH) + " of " + pop.n + " units…";
+    await new Promise(r => setTimeout(r, 0));
+  }
+  const ids = Array.from({ length: pop.n }, (_, i) => i);
+  ids.sort((p, q) => cmpKeys(keys[p], keys[q], sort.desc) || p - q);
+  st.order = ids; st.orderPop = pop.key; st.sortedFor = vk; st.page = 0; st.sel = ids[0];
+  updateSortNote();
+  requestRender();
+}
+function setSort(key) {
+  st.sort = key; st.sortToken++;
+  if (key === "id") { st.order = null; st.orderPop = null; st.page = 0; }
+  else if (key === "centre") { centreOrder(); st.sel = st.order[0]; }
+  else if (key === "random") shuffleOrder();
+  updateSortNote();
+  if (SORTS[key].stat) computeSort();
+  requestRender();
+}
+
+// ================================================================ rendering
+let renderQueued = false, rendering = false, renderAgain = false;
+let settleTimer = 0;
+// While the arena moves, frames draw maps only. Field detection, captions and outlines wait for one
+// full frame about 200 ms after the last move.
+function interact() {
+  st.interacting = true;
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(settle, 200);
+}
+function settle() {
+  clearTimeout(settleTimer);
+  if (!st.interacting) return;
+  st.interacting = false;
+  requestRender();
+}
+function requestRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; render(); });
+}
+async function render() {
+  if (rendering) { renderAgain = true; return; }
+  rendering = true;
+  try { await renderOnce(); }
+  catch (e) { setStatus("Something went wrong drawing the maps: " + errText(e), true); console.error(e); }
+  rendering = false;
+  if (renderAgain) { renderAgain = false; requestRender(); }
+}
+function ensureTiles(n) {
+  const box = $("tiles");
+  while (box.children.length < n) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "tile";
+    const cv = document.createElement("canvas"), cap = document.createElement("span"), lab = document.createElement("span"), val = document.createElement("span");
+    cap.className = "cap"; lab.className = "lab"; val.className = "val";
+    cap.append(lab, val); b.append(cv, cap);
+    b.addEventListener("click", () => { const u = Number(b.dataset.u); if (!Number.isNaN(u)) { st.sel = u; requestRender(); } });
+    box.append(b);
+  }
+  for (let i = 0; i < box.children.length; i++) box.children[i].hidden = i >= n;
+}
+function caption(r) {
+  if (!(r.peak > 0)) return r.vmin < 0 ? "all negative" : "silent";
+  switch (st.sort) {
+    case "fieldsize": return isFinite(r.meanField) ? Math.round(r.meanField) + " c" : "no field";
+    default: return r.nFields + (r.nFields === 1 ? " field" : " fields");
+  }
+}
+function renderPopHead() {
+  const pop = st.pops[st.popKey], ck = st.popKey === "rect" ? (st.checks.rectCodes || {})[rectKey()] : st.checks[st.popKey];
+  $("pop-title").textContent = pop.meta.label + " · " + pop.n + " units";
+  const desc = $("pop-desc");
+  const band = isIdealPop(st.popKey) && st.nmin
+    ? "Slow waves removed: |n| < " + st.nmin + ", so no wavelength above " + Math.round(NPOS / st.nmin) + " cells. " : "";
+  desc.replaceChildren(document.createTextNode(pop.meta.description + " " + band));
+  const chip = document.createElement("span");
+  if (!ck) { chip.className = "chip wait"; chip.textContent = "checking against Python…"; }
+  else if (ck.error) { chip.className = "chip bad"; chip.textContent = "check failed: " + ck.error; }
+  else if (ck.bad) { chip.className = "chip bad"; chip.textContent = ck.bad + " values differ from Python"; }
+  else { chip.className = "chip ok"; chip.textContent = (band ? "full draw " : "") + "matches Python to " + ck.maxAbs.toExponential(1); }
+  desc.append(chip);
+}
+async function renderOnce() {
+  const pop = st.pops[st.popKey];
+  if (!pop) return;
+  renderPopHead();
+  const a = { x0: st.x0, y0: st.y0, S: st.S };
+  const order = currentOrder(pop), pages = Math.max(1, Math.ceil(order.length / st.perPage));
+  st.page = Math.min(Math.max(st.page, 0), pages - 1);
+  const units = order.slice(st.page * st.perPage, (st.page + 1) * st.perPage);
+  if (st.sel === null || st.sel >= pop.n) st.sel = units[0];
+  const want = units.includes(st.sel) ? units.slice() : units.concat([st.sel]);
+  $("pageinfo").textContent = "Page " + (st.page + 1) + " of " + pages;
+  $("prev").disabled = st.page === 0; $("next").disabled = st.page >= pages - 1;
+
+  const lite = st.interacting, t0 = performance.now();
+  let res;
+  try { res = await pop.maps(want, a); }
+  catch (e) {
+    ensureTiles(0);
+    setStatus("Could not compute " + pop.meta.label.toLowerCase() + ": " + errText(e), true);
+    return;
+  }
+  const tMaps = performance.now() - t0, t1 = performance.now();
+  const W = res.W, WW = W * W, ef = eff(), B = st.bufs;
+  // Each tile and the selected unit write into buffers kept across frames.
+  const out = want.map((u, q) => {
+    if (u === st.sel) {
+      B.detail = grow(B.detail, WW, Float32Array);
+      if (!lite) B.labels = grow(B.labels, WW, Int32Array);
+      return processUnit(res.data, q * WW, W, res.f, ef, { dest: B.detail, lite, labels: lite ? null : B.labels });
+    }
+    B.tiles[q] = grow(B.tiles[q], WW, Float32Array);
+    return processUnit(res.data, q * WW, W, res.f, ef, { dest: B.tiles[q], lite, labels: null });
+  });
+  recycle(res);
+  const tProc = performance.now() - t1;
+  const div = pop.signed && !ef.rectify, lut = div ? LUT.div : LUT.seq;
+  let pageRange = null;
+  if (st.scale === "page") {
+    let hi = 0;
+    for (let i = 0; i < units.length; i++) { const r = out[i]; hi = Math.max(hi, div ? Math.max(Math.abs(r.vmin), Math.abs(r.vmax)) : r.vmax); }
+    pageRange = [div ? -hi : 0, hi];
+  }
+  ensureTiles(units.length);
+  const tiles = $("tiles").children;
+  units.forEach((u, i) => {
+    const r = out[i], b = tiles[i], [lo, hi] = pageRange || rangeFor(r, div), same = b.dataset.u === String(u);
+    b.dataset.u = String(u);
+    b.classList.toggle("sel", u === st.sel);
+    b.setAttribute("aria-pressed", u === st.sel ? "true" : "false");
+    drawMap(b.firstChild, r.v, W, lo, hi, lut, THUMB_RES);
+    // While moving, captions keep their last values; a tile that changed unit shows a placeholder.
+    if (!lite || !same) {
+      const cap = lite ? "…" : caption(r);
+      b.querySelector(".lab").textContent = pop.label(u);
+      b.querySelector(".val").textContent = cap;
+      b.setAttribute("aria-label", pop.label(u) + ", " + cap);
+    }
+  });
+  const si = want.indexOf(st.sel);
+  renderDetail(pop, st.sel, out[si], res, a, div, lut, pageRange, lite);
+  const onGpu = MLP_KEYS.includes(pop.key) || (pop.key === "ideal_rot" && st.engine && st.engine.rotMaps) ||
+    (pop.key === "ideal_place" && st.engine && st.engine.placeMaps);
+  const engine = onGpu ? (st.engine ? st.engine.name : "GPU") : res.fromWorker ? "a background thread" : "JavaScript";
+  setStatus(units.length + " of " + pop.n + " units · " + a.S + " × " + a.S + " arena at (" + a.x0 + ", " + a.y0 + ")" +
+    (res.f > 1 ? " · each pixel is the mean of " + res.f + " × " + res.f + " cells" : "") +
+    " · maps " + fmtMs(tMaps) + " on " + engine + " · processing " + fmtMs(tProc) +
+    (lite ? " · fields update when you stop" : ""));
+}
+function renderDetail(pop, u, r, res, a, div, lut, pageRange, lite) {
+  const W = res.W;
+  $("d-title").textContent = pop.label(u);
+  const [lo, hi] = pageRange || rangeFor(r, div);
+  drawMap($("d-canvas"), r.v, W, lo, hi, lut, DETAIL_RES);
+  drawOutlines($("d-overlay"), r, W);
+  drawColorbar(lut);
+  $("d-lo").textContent = fmtVal(lo);
+  $("d-mid").textContent = div ? "0" : "";
+  $("d-hi").textContent = hi > lo ? fmtVal(hi) : "silent";
+  st.detail = { u, r, W, f: res.f, a };
+  if (lite) return;  // the statistics wait for the full frame after a move
+  const cellAt = (R, C) => [mod(a.x0 + C * res.f, NPOS), mod(a.y0 + R * res.f, NPOS)];
+  const rows = [];
+  if (r.peak > 0) {
+    const [px, py] = cellAt(r.peakR, r.peakC);
+    rows.push(["Peak", fmtVal(r.peak) + " at (" + px + ", " + py + ")"]);
+  } else rows.push(["Peak", r.vmin < 0 ? "no positive values in this arena" : "silent in this arena"]);
+  rows.push(["Mean", fmtVal(r.mean)]);
+  rows.push(["Fields", r.nFields + " (" + (st.f.thresh > 0 ? "≥ " + st.f.thresh + "% of peak" : "active regions") + ", ≥ " + st.f.minSize + " cells)"]);
+  if (r.nFields) rows.push(["Field size", "mean " + Math.round(r.meanField) + ", largest " + Math.round(r.maxField) + " cells"]);
+  for (const kv of pop.info(u)) rows.push(kv);
+  const dl = $("d-stats");
+  dl.replaceChildren(...rows.flatMap(([k, v]) => { const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = k; dd.textContent = v; return [dt, dd]; }));
+}
+
+// ================================================================ checks
+async function runChecks() {
+  const R = st.M.ref_arena, N = R.S * R.S;
+  for (const key of POP_ORDER) {
+    const pop = st.pops[key];
+    if (key === "rect") {
+      try { await checkRect(); } catch (e) { st.checks.rect = { error: errText(e) }; }
+      renderChecks();
+      if (st.popKey === "rect") renderPopHead();
+      continue;
+    }
+    try {
+      const ref = f32(await fetchText(pop.meta.ref_file)), U = pop.n;
+      const all = Array.from({ length: U }, (_, i) => i);
+      const res = await pop.maps(all, R, true), ours = res.data;
+      let maxAbs = 0, bad = 0;
+      for (let u = 0; u < U; u++) for (let i = 0; i < N; i++) {
+        const d = Math.abs(ours[u * N + i] - ref[i * U + u]);
+        if (!(d <= 1e-4)) bad++;
+        if (d > maxAbs) maxAbs = d;
+      }
+      recycle(res);
+      st.checks[key] = { maxAbs, bad };
+    } catch (e) { st.checks[key] = { error: errText(e) }; }
+    renderChecks();
+    if (key === st.popKey) renderPopHead();
+  }
+}
+// Every rectified code, on its check units (rect_ref.b64.txt: code, then cell, then unit).
+async function checkRect() {
+  const RM = st.RM, R = RM.ref_arena, N = R.S * R.S, pop = st.pops.rect;
+  const ref = f32(await fetchText("rect_ref.b64.txt")), per = {};
+  let off = 0, maxAll = 0, badAll = 0;
+  for (const c of RM.codes) {
+    const U = c.check_units.length, res = await pop.maps(c.check_units, R, true, c), ours = res.data;
+    let maxAbs = 0, bad = 0;
+    for (let q = 0; q < U; q++) for (let i = 0; i < N; i++) {
+      const d = Math.abs(ours[q * N + i] - ref[off + i * U + q]);
+      if (!(d <= 1e-4)) bad++;
+      if (d > maxAbs) maxAbs = d;
+    }
+    recycle(res);
+    off += N * U;
+    per[c.key] = { maxAbs, bad };
+    maxAll = Math.max(maxAll, maxAbs); badAll += bad;
+    st.checks.rectCodes = per;
+    if (c.key === rectKey() && st.popKey === "rect") renderPopHead();
+  }
+  if (off !== ref.length) throw new Error("reference has " + ref.length + " values, expected " + off);
+  st.checks.rect = { maxAbs: maxAll, bad: badAll };
+}
+function renderChecks() {
+  $("checks").replaceChildren(...POP_ORDER.map(k => {
+    const li = document.createElement("li"), ck = st.checks[k], chip = document.createElement("span");
+    li.append(document.createTextNode(st.pops[k].meta.label + (k === "rect" ? " (all " + st.RM.codes.length + " codes)" : "") + " "));
+    if (!ck) { chip.className = "chip wait"; chip.textContent = "pending"; }
+    else if (ck.error) { chip.className = "chip bad"; chip.textContent = ck.error; }
+    else if (ck.bad) { chip.className = "chip bad"; chip.textContent = ck.bad + " values off"; }
+    else { chip.className = "chip ok"; chip.textContent = "max diff " + ck.maxAbs.toExponential(1); }
+    li.append(chip);
+    return li;
+  }));
+}
+
+// ================================================================ grid results
+// rect_results.json is analysis/rect_ideal/summary.py's grid_results.json: every probe measure at
+// every K (one recall step) and the place-field summaries of every code. Missing runs show as "–".
+const RES_GROUPS = { probe: "Hopfield memory (probe)", fields: "Place fields over the whole scaffold", kernel: "Population kernel" };
+const PROBE_SETUP = " The probe stores the goals of K arenas (20 × 20 cells at random places; 8 layouts of 20 arenas, the first 5 scored) as a Hebbian Hopfield memory and recalls for one step.";
+const RES_MEASURES = [
+  { key: "err", group: "probe", label: "Direction error", unit: "degrees", p: 1,
+    def: "Mean absolute angle between q and the true bearing to the goal, over every cell of each scored arena except the goal. q is the recalled code minus the current code, projected on the directions in which the code changes for one step east and one step north. Lower is better." + PROBE_SETUP },
+  { key: "acc45", group: "probe", label: "Direction within 45°", share: true,
+    def: "Share of arena cells whose direction error is under 45°." + PROBE_SETUP },
+  { key: "exact", group: "probe", label: "Exact retrieval", share: true,
+    def: "Share of an arena's 400 cells whose recalled code is closest (cosine) to the goal cell's own code, among every cell of the K stored arenas." + PROBE_SETUP },
+  { key: "basin", group: "probe", label: "Basin radius", unit: "cells", p: 1,
+    def: "Largest radius r such that every scaffold cell within r of the goal recalls to the goal, stopping at the first failure. The cues and the decoding bank are every cell within 64 cells of the goal, plus the stored goals. Two arenas per layout." + PROBE_SETUP },
+  { key: "basin95", group: "probe", label: "Basin radius at 95%", unit: "cells", p: 1,
+    def: "The basin radius when 95% of the cues within it, not all, must recall to the goal." + PROBE_SETUP },
+  { key: "cont", group: "probe", label: "Reach", share: true,
+    def: "Share of an arena's 400 start cells from which following q (one-cell steps along q's direction, at most 80, clipped at the walls) ends within half a cell of the goal." + PROBE_SETUP },
+  { key: "disc", group: "probe", label: "Reach on the lattice", share: true,
+    def: "Reach when each step is one move up, down, left or right, whichever q points closest to. The goal stops the walk." + PROBE_SETUP },
+  { key: "dead", group: "probe", label: "Dead goals", share: true,
+    def: "Share of scored arenas (the first 3 per layout) whose reach is below 0.5. Lower is better." + PROBE_SETUP },
+  { key: "s15", group: "probe", label: "Direction within 45° after 15 steps", share: true,
+    def: "Share of arena cells with direction error under 45° when q is read after 15 recall steps instead of one." + PROBE_SETUP },
+  { key: "fpu", group: "fields", label: "Fields per unit, mean", p: 1, get: q => q.support.fields_per_unit.mean,
+    def: "A field is a connected region (4-neighbour) where the unit is active, over the whole 1716 × 1716 scaffold with its edges joined. Every field counts, single cells included." },
+  { key: "fpu_min", group: "fields", label: "Fields per unit, fewest", p: 0, get: q => q.support.fields_per_unit.min,
+    def: "The smallest number of fields any unit of the code has over the whole scaffold." },
+  { key: "fpu_max", group: "fields", label: "Fields per unit, most", p: 0, get: q => q.support.fields_per_unit.max,
+    def: "The largest number of fields any unit of the code has over the whole scaffold." },
+  { key: "dmed", group: "fields", label: "Field diameter, median", unit: "grid periods", p: 2, get: q => q.support.diam_over_lambda.median,
+    def: "A field's diameter is that of the circle with its area, divided by 12 cells (the grid modules are 11, 12 and 13 cells). Median over every field of every unit." },
+  { key: "dmean", group: "fields", label: "Field diameter, mean", unit: "grid periods", p: 2, get: q => q.support.diam_over_lambda.mean,
+    def: "Mean over every field of every unit of the equivalent diameter over 12 cells." },
+  { key: "dp5", group: "fields", label: "Field diameter, 5th percentile", unit: "grid periods", p: 2, get: q => q.support.diam_over_lambda.p5,
+    def: "5% of fields are smaller than this (equivalent diameter over 12 cells)." },
+  { key: "dp95", group: "fields", label: "Field diameter, 95th percentile", unit: "grid periods", p: 2, get: q => q.support.diam_over_lambda.p95,
+    def: "5% of fields are larger than this (equivalent diameter over 12 cells)." },
+  { key: "dmax", group: "fields", label: "Field diameter, largest", unit: "grid periods", p: 2, get: q => q.support.diam_over_lambda.max,
+    def: "The largest field of any unit (equivalent diameter over 12 cells)." },
+  { key: "daw", group: "fields", label: "Field diameter, cell-weighted mean", unit: "grid periods", p: 2, get: q => q.support.diam_over_lambda_area_weighted_mean,
+    def: "Mean diameter of the field that a random active cell belongs to. Large fields count in proportion to their area." },
+  { key: "u9", group: "fields", label: "Fields under 9 cells", share: true, get: q => q.support.share_fields_under9,
+    def: "Share of fields smaller than 9 cells, the usual minimum field size." },
+  { key: "largest", group: "fields", label: "Largest field's share of a unit", share: true, get: q => q.support.largest_field_share.mean,
+    def: "For each unit, its largest field's area over its whole active area, averaged over units. Near 1 means the active regions have joined into one web." },
+  { key: "p20_fpu", group: "fields", label: "Fields per unit at 20% of peak", p: 1, get: q => q.peak20.fields_per_unit.mean,
+    def: "The same count with Kjelstrup's rule: a field is a connected region at or above 20% of the unit's own peak over the whole scaffold." },
+  { key: "p20_dmed", group: "fields", label: "Field diameter at 20% of peak, median", unit: "grid periods", p: 2, get: q => q.peak20.diam_over_lambda.median,
+    def: "Median equivalent diameter over 12 cells of the 20%-of-peak fields." },
+  { key: "hw", group: "kernel", label: "Kernel half-width after inhibition", unit: "cells", p: 1, get: q => q.kernel.half_width_inh,
+    def: "Distance at which the code's mean cosine similarity, after the one global inhibition constant is subtracted, falls to 0.5 (both axes, 1500 places). The ideal at r = 16 gives about 19 cells; r was chosen to match it." },
+  { key: "floor", group: "kernel", label: "Similarity floor without inhibition", p: 3, get: q => q.kernel.floor_raw,
+    def: "Mean cosine similarity between random far-apart places, before inhibition. Inhibition brings it to about 0." },
+  { key: "r", group: "kernel", label: "Kernel radius r", unit: "cells", p: 2, get: q => q.r,
+    def: "The ideal code's kernel radius each code was drawn at. Sparser codes need a larger r for the same kernel width." },
+];
+const RES_BY_KEY = Object.fromEntries(RES_MEASURES.map(m => [m.key, m]));
+function indexResults(RR) {
+  const P = new Map(), F = new Map();
+  for (const p of RR.probe || []) P.set(p.kind === "ideal" ? "ideal_D" + p.D : rectKey(p.f, p.D) + (p.inh ? "_inh" : ""), p);
+  for (const q of RR.fields || []) F.set(rectKey(q.f, q.D), q);
+  return { P, F };
+}
+const fmtRes = (m, v) => m.share ? v.toFixed(3) : v.toFixed(m.p);
+const codeName = (f, D) => (f === null ? "Ideal, signed" : Math.round(100 * f) + "% active") + ", " + D + " units";
+function resValue(m, f, D) {
+  if (!st.RX) return NaN;
+  let v = null;
+  if (m.group === "probe") {
+    const p = st.RX.P.get(f === null ? "ideal_D" + D : rectKey(f, D) + (st.res.inh ? "_inh" : ""));
+    v = p && p.K[st.res.K] ? p.K[st.res.K][m.key] : null;
+  } else if (f !== null) {
+    const q = st.RX.F.get(rectKey(f, D));
+    v = q ? m.get(q) : null;
+  }
+  return v == null ? NaN : v;
+}
+// Cell text takes whichever of the page's dark ink or white reads better on the cell's colour.
+function inkFor(r, g, b) {
+  const L = 0.2126 * toLin(r) + 0.7152 * toLin(g) + 0.0722 * toLin(b);
+  return 1.05 / (L + 0.05) >= (L + 0.05) / 0.061 ? "#ffffff" : "#151b24";
+}
+function renderResults() {
+  if (!st.RM || !LUT) return;
+  const m = RES_BY_KEY[st.res.measure], probe = m.group === "probe", Ds = st.RM.Ds;
+  $("res-k-row").hidden = !probe; $("res-inh").hidden = !probe;
+  $("res-def").textContent = m.def;
+  const rows = (probe ? [null] : []).concat(st.RM.Fs);
+  const vals = rows.map(f => Ds.map(D => resValue(m, f, D)));
+  const fin = vals.flat().filter(Number.isFinite);
+  const lo = fin.length ? Math.min(...fin) : 0, hi = fin.length ? Math.max(...fin) : 1;
+  const hr = document.createElement("tr"), corner = document.createElement("th");
+  hr.append(corner, ...Ds.map(D => { const th = document.createElement("th"); th.scope = "col"; th.textContent = D + " units"; return th; }));
+  const head = document.createElement("thead"), body = document.createElement("tbody");
+  head.append(hr);
+  rows.forEach((f, i) => {
+    const tr = document.createElement("tr"), th = document.createElement("th");
+    th.scope = "row"; th.textContent = f === null ? "Ideal, signed" : Math.round(100 * f) + "% active";
+    tr.append(th);
+    Ds.forEach((D, j) => {
+      const v = vals[i][j], ok = Number.isFinite(v), td = document.createElement("td");
+      const el = document.createElement(f === null ? "span" : "button"), txt = ok ? fmtRes(m, v) : "–";
+      el.className = "cell"; el.textContent = txt;
+      if (f !== null) { el.type = "button"; el.addEventListener("click", () => { setRect(f, D); setPop("rect"); }); }
+      if (ok) {
+        const t = hi > lo ? (v - lo) / (hi - lo) : 0.5, li = Math.round(t * 255) * 3, c = LUT.seq;
+        el.style.background = "rgb(" + c[li] + "," + c[li + 1] + "," + c[li + 2] + ")";
+        el.style.color = inkFor(c[li], c[li + 1], c[li + 2]);
+      } else el.classList.add("na");
+      if (f !== null && f === st.rect.f && D === st.rect.D) el.classList.add("sel");
+      const say = codeName(f, D) + ": " + (ok ? txt + (m.unit ? " " + m.unit : "") : "no result yet") +
+        (probe ? " (K = " + st.res.K + (f === null ? "" : st.res.inh ? ", with inhibition" : ", no inhibition") + ")" : "");
+      el.setAttribute("aria-label", say); el.title = say;
+      el.addEventListener("pointerenter", () => { $("res-note").textContent = say; });
+      td.append(el); tr.append(td);
+    });
+    body.append(tr);
+  });
+  $("heat").replaceChildren(head, body);
+  $("res-note").textContent = !st.RR ? "Results are not in yet. They appear here when the probe and field runs finish."
+    : !fin.length ? "No runs have finished for this measure yet."
+    : (isDark() ? "Brighter" : "Darker") + " cells are larger values, from " + fmtRes(m, lo) + " to " + fmtRes(m, hi) +
+      ". Click a rectified cell to view its units.";
+  renderSelected();
+}
+function renderSelected() {
+  const c = st.pops.rect.code(), q = st.RX && st.RX.F.get(c.key), rows = [];
+  $("sel-title").textContent = Math.round(100 * c.f) + "% active, " + c.D + " units (" + c.n_freq + " waves)";
+  rows.push(["Kernel radius r", c.r.toFixed(2) + " cells (ideal 16)"]);
+  if (q) {
+    const s = q.support, k = q.kernel, d = s.diam_over_lambda, n = s.fields_per_unit, p = q.peak20;
+    rows.push(["Kernel half-width", k.half_width_inh.toFixed(1) + " cells after inhibition; ideal " + k.half_width_ideal_r16.toFixed(1)]);
+    rows.push(["Similarity floor", k.floor_raw.toFixed(3) + " raw, " + k.floor_inh.toFixed(3) + " after inhibition"]);
+    rows.push(["Fields per unit", "mean " + n.mean.toFixed(1) + ", median " + n.median.toFixed(0) + ", range " + n.min + "–" + n.max]);
+    rows.push(["Fields in total", s.n_fields.toLocaleString()]);
+    rows.push(["Field diameter", "median " + d.median.toFixed(2) + ", mean " + d.mean.toFixed(2) + " grid periods"]);
+    rows.push(["Diameter spread", "5–95% " + d.p5.toFixed(2) + "–" + d.p95.toFixed(2) + ", range " + d.min.toFixed(2) + "–" + d.max.toFixed(2)]);
+    rows.push(["Fields under 9 cells", (100 * s.share_fields_under9).toFixed(1) + "%"]);
+    rows.push(["Active share per unit", (100 * s.coverage_per_unit.mean).toFixed(1) + "% of the scaffold"]);
+    rows.push(["Largest field", (100 * s.largest_field_share.mean).toFixed(1) + "% of a unit's active area"]);
+    rows.push(["20%-of-peak fields", p.fields_per_unit.mean.toFixed(1) + " per unit, median diameter " + p.diam_over_lambda.median.toFixed(2)]);
+  } else rows.push(["Place fields", st.RR ? "no field run for this code yet" : "not in yet"]);
+  if (st.RX) {
+    const K = st.res.K, a = st.RX.P.get(c.key), b = st.RX.P.get(c.key + "_inh"), base = st.RX.P.get("ideal_D" + c.D);
+    const g = (p, key, dp) => p && p.K[K] && p.K[K][key] != null ? p.K[K][key].toFixed(dp) : "–";
+    rows.push(["Probe, K = " + K, "no inhibition / with / signed ideal"]);
+    for (const [lab, key, dp] of [["Direction error (°)", "err", 1], ["Exact retrieval", "exact", 3], ["Basin radius (cells)", "basin", 1],
+                                  ["Reach", "cont", 3], ["Dead goals", "dead", 2]])
+      rows.push([lab, g(a, key, dp) + " / " + g(b, key, dp) + " / " + g(base, key, dp)]);
+  }
+  $("sel-stats").replaceChildren(...rows.flatMap(([k, v]) => {
+    const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = k; dd.textContent = v; return [dt, dd];
+  }));
+  drawHist(q);
+}
+function niceStep(x) { const p = Math.pow(10, Math.floor(Math.log10(x))), m = x / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; }
+// Field diameters (support fields), log bins of 0.05 decades, as a share of fields or of active cells.
+function drawHist(q) {
+  const svg = $("hist"), NS = "http://www.w3.org/2000/svg", W = 380, H = 190, ml = 46, mr = 12, mt = 12, mb = 38;
+  const mk = (tag, attrs, text) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    return e;
+  };
+  const idle = "Hover over a bar to read it.";
+  if (!q) {
+    svg.replaceChildren(mk("text", { x: W / 2, y: H / 2, "text-anchor": "middle" }, st.RR ? "No field run for this code yet" : "Field results are not in yet"));
+    $("hist-tip").textContent = "";
+    return;
+  }
+  const h = q.support.hist_log10_diam_over_lambda, E = h.edges, cells = st.res.hist === "cells";
+  const raw = cells ? h.cells : h.fields, tot = raw.reduce((s, v) => s + v, 0), share = raw.map(v => v / tot);
+  const nz = share.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0);
+  const i0 = Math.max(0, nz[0] - 1), i1 = Math.min(share.length - 1, nz[nz.length - 1] + 1);
+  const e0 = E[i0], e1 = E[i1 + 1], pw = W - ml - mr, ph = H - mt - mb;
+  const x = e => ml + (e - e0) / (e1 - e0) * pw;
+  const top = Math.max(...share.slice(i0, i1 + 1)), step = niceStep(top / 4), ymax = Math.ceil(top / step - 1e-9) * step;
+  const y = s => mt + (1 - s / ymax) * ph;
+  const out = [];
+  for (let k = 0; k * step <= ymax + 1e-12; k++) {
+    const v = k * step;
+    out.push(mk("line", { class: "grid", x1: ml, x2: W - mr, y1: y(v), y2: y(v) }));
+    out.push(mk("text", { x: ml - 6, y: y(v) + 3.5, "text-anchor": "end" }, (100 * v).toFixed(step < 0.01 ? 1 : 0) + "%"));
+  }
+  for (const t of [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100]) {
+    const lt = Math.log10(t);
+    if (lt < e0 || lt > e1) continue;
+    out.push(mk("line", { class: "grid", x1: x(lt), x2: x(lt), y1: H - mb, y2: H - mb + 4 }));
+    out.push(mk("text", { x: x(lt), y: H - mb + 15, "text-anchor": "middle" }, String(t)));
+  }
+  out.push(mk("text", { class: "axis-title", x: ml + pw / 2, y: H - 6, "text-anchor": "middle" }, "Field diameter in grid periods of 12 cells, log scale"));
+  const bars = [];
+  for (let i = i0; i <= i1; i++) {
+    const xa = x(E[i]) + 1, w = Math.max(1, x(E[i + 1]) - x(E[i]) - 2);
+    const b = mk("rect", { class: "bar", x: xa, y: y(share[i]), width: w, height: Math.max(0, H - mb - y(share[i])), rx: 1 });
+    bars.push(b); out.push(b);
+  }
+  const med = q.support.diam_over_lambda.median, lm = Math.log10(med);
+  if (lm > e0 && lm < e1) {
+    const xm = x(lm), right = xm > ml + pw * 0.7;
+    out.push(mk("line", { class: "med", x1: xm, x2: xm, y1: mt, y2: H - mb }));
+    out.push(mk("text", { x: right ? xm - 4 : xm + 4, y: mt + 9, "text-anchor": right ? "end" : "start" }, "median " + med.toFixed(2)));
+  }
+  bars.forEach((b, k) => {
+    const i = i0 + k, hit = mk("rect", { x: x(E[i]), y: mt, width: x(E[i + 1]) - x(E[i]), height: ph, fill: "transparent" });
+    hit.addEventListener("pointerenter", () => {
+      bars.forEach(bb => bb.classList.toggle("on", bb === b));
+      $("hist-tip").textContent = Math.pow(10, E[i]).toFixed(2) + "–" + Math.pow(10, E[i + 1]).toFixed(2) + " grid periods: " +
+        (100 * share[i]).toFixed(1) + "% of " + (cells ? "active cells" : "fields") + " (" + Math.round(raw[i]).toLocaleString() + ")";
+    });
+    out.push(hit);
+  });
+  out.push(mk("line", { class: "grid", x1: ml, x2: W - mr, y1: H - mb, y2: H - mb }));
+  svg.onpointerleave = () => { bars.forEach(bb => bb.classList.remove("on")); $("hist-tip").textContent = idle; };
+  svg.replaceChildren(...out);
+  $("hist-tip").textContent = idle;
+}
+
+// ================================================================ controls
+const sizeToT = S => Math.round(1000 * Math.log(Math.max(S, SIZE_MIN) / SIZE_MIN) / Math.log(NPOS / SIZE_MIN));
+const tToSize = t => Math.round(SIZE_MIN * Math.pow(NPOS / SIZE_MIN, t / 1000));
+function syncInputs() {
+  $("size").value = st.S; $("size-range").value = sizeToT(st.S);
+  $("x0").value = st.x0; $("y0").value = st.y0;
+}
+function setArena(x0, y0, S, fromJump) {
+  st.S = Math.min(NPOS, Math.max(1, Math.round(S)));
+  st.x0 = mod(Math.round(x0), NPOS); st.y0 = mod(Math.round(y0), NPOS);
+  if (!fromJump) $("jump").value = "";
+  if (st.sort === "centre") centreOrder();
+  syncInputs(); drawMinimap(); updateSortNote(); requestRender();
+}
+function setSize(S) {
+  const cx = st.x0 + st.S / 2, cy = st.y0 + st.S / 2;
+  S = Math.min(NPOS, Math.max(1, Math.round(S)));
+  setArena(cx - S / 2, cy - S / 2, S);
+}
+function showBand() {
+  const on = isIdealPop(st.popKey) && !!st.M.populations.ideal.bands;
+  $("band-row").hidden = !on; $("band-hint").hidden = !on;
+}
+function setBand(c) {
+  st.nmin = c; st.sortToken++;
+  updateSortNote();
+  if (isIdealPop(st.popKey) && SORTS[st.sort].stat) computeSort();
+  requestRender();
+}
+function showRect() {
+  const on = st.popKey === "rect";
+  $("rect-row").hidden = !on; $("rect-hint").hidden = !on;
+}
+// A new code in the rectified grid: same population, different unit count, so orders start over.
+function setRect(f, D) {
+  if (f === st.rect.f && D === st.rect.D) return;
+  st.rect = { f, D };
+  $("rect-f").value = String(f); $("rect-D").value = String(D);
+  st.pops.rect.refresh();
+  if (st.popKey === "rect") {
+    st.sel = null; st.page = 0; st.sortToken++;
+    if (st.orderPop === "rect") { st.order = null; st.orderPop = null; }
+    if (st.sort === "random") shuffleOrder();
+    updateSortNote();
+    if (SORTS[st.sort].stat) computeSort();
+    requestRender();
+  }
+  renderResults();
+}
+function setPop(key) {
+  if (!st.pops[key] || key === st.popKey) return;
+  st.popKey = key; st.sel = null; st.page = 0; st.sortToken++;
+  showBand(); showRect();
+  document.querySelectorAll("#pops button").forEach(b => b.setAttribute("aria-pressed", b.dataset.pop === key ? "true" : "false"));
+  // The place-field rotation opens on its field-centre order; other populations cannot use it.
+  if (hasCentres(st.pops[key]) && st.sort === "id") st.sort = "centre";
+  else if (!hasCentres(st.pops[key]) && st.sort === "centre") { st.sort = "id"; st.order = null; st.orderPop = null; }
+  syncSortOptions();
+  if (st.sort === "centre") centreOrder();
+  if (st.sort === "random") shuffleOrder();
+  updateSortNote();
+  if (SORTS[st.sort].stat) computeSort();
+  requestRender();
+}
+function changePage(d) { st.page += d; requestRender(); }
+function stepSel(d) {
+  const pop = st.pops[st.popKey], order = currentOrder(pop);
+  const i = order.indexOf(st.sel), j = mod((i < 0 ? 0 : i) + d, order.length);
+  st.sel = order[j];
+  st.page = Math.floor(j / st.perPage);
+  requestRender();
+}
+function filtersChanged() { updateSortNote(); requestRender(); }
+const MODE_HINT = {
+  raw: "Each unit's output exactly as the model computes it, negative values included. Nothing is rectified or smoothed.",
+  rate: "The steps applied to recorded neurons: negative values set to zero, then optional Gaussian smoothing in cells, normalised at the arena edge.",
+};
+function setMode(m) {
+  st.mode = m;
+  const rate = m === "rate";
+  document.querySelectorAll("#modes button").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === m ? "true" : "false"));
+  for (const id of ["rectify", "sigma"]) { $(id).disabled = !rate; $(id).closest(".row").classList.toggle("off", !rate); }
+  $("mode-hint").textContent = MODE_HINT[m];
+  filtersChanged();
+}
+
+function buildControls() {
+  const pops = $("pops");
+  pops.replaceChildren(...POP_ORDER.map(k => {
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.pop = k; b.textContent = st.pops[k].meta.label;
+    b.setAttribute("aria-pressed", k === st.popKey ? "true" : "false");
+    b.addEventListener("click", () => setPop(k));
+    return b;
+  }));
+  const sort = $("sort");
+  sort.replaceChildren(...Object.entries(SORTS).map(([k, s]) => { const o = document.createElement("option"); o.value = k; o.textContent = s.label; return o; }));
+  syncSortOptions();
+  const jump = $("jump"), first = document.createElement("option");
+  first.value = ""; first.textContent = "Go to a training patch of the trained encoders…";
+  const groups = new Map();
+  st.M.arenas.forEach((r, i) => {
+    if (!groups.has(r.group)) { const g = document.createElement("optgroup"); g.label = r.group; groups.set(r.group, g); }
+    const o = document.createElement("option");
+    o.value = String(i); o.textContent = r.label + " (" + r.x0 + ", " + r.y0 + ")";
+    groups.get(r.group).append(o);
+  });
+  jump.replaceChildren(first, ...groups.values());
+  const bands = st.M.populations.ideal.bands;
+  if (bands) $("band").replaceChildren(...bands.cutoffs.map(c => {
+    const o = document.createElement("option");
+    o.value = String(c);
+    o.textContent = c ? "|n| < " + c + " (wavelengths over " + Math.round(NPOS / c) + " cells)" : "None (full Gaussian)";
+    return o;
+  }));
+  showBand();
+  const pct = f => Math.round(100 * f) + "%";
+  $("rect-f").replaceChildren(...st.RM.Fs.map(f => { const o = document.createElement("option"); o.value = String(f); o.textContent = pct(f) + " of units at each place"; return o; }));
+  $("rect-D").replaceChildren(...st.RM.Ds.map(D => { const o = document.createElement("option"); o.value = String(D); o.textContent = D + " units (" + D / 2 + " waves)"; return o; }));
+  $("rect-f").value = String(st.rect.f); $("rect-D").value = String(st.rect.D);
+  showRect();
+  const ms = $("res-measure"), groups = {};
+  for (const m of RES_MEASURES) {
+    if (!groups[m.group]) { const g = document.createElement("optgroup"); g.label = RES_GROUPS[m.group]; groups[m.group] = g; }
+    const o = document.createElement("option"); o.value = m.key; o.textContent = m.label + (m.unit ? " (" + m.unit + ")" : "");
+    groups[m.group].append(o);
+  }
+  ms.replaceChildren(...Object.values(groups));
+  ms.value = st.res.measure;
+  $("res-k").replaceChildren(...["1", "3", "5", "10", "20"].map(k => { const o = document.createElement("option"); o.value = k; o.textContent = k; return o; }));
+  $("res-k").value = st.res.K;
+  $("prov").textContent = "Rectified codes exported by analysis/rect_ideal/export_page.py at commit " + st.RM.git_sha +
+    (st.RR ? "; results from analysis/rect_ideal/summary.py" : "; grid results not in yet") +
+    ". Other populations as in the original viewer: analysis/tuning_viewer/export.py at commit " + st.M.git_sha +
+    ". Trained encoder: " + (st.M.populations.trained.encoder || "") +
+    ". ReLU k128: " + (st.M.populations.trained_relu.encoder || "") + ".";
+}
+
+function wireControls() {
+  $("size-range").addEventListener("input", () => { interact(); setSize(tToSize(+$("size-range").value)); });
+  $("size-range").addEventListener("change", settle);
+  $("size").addEventListener("change", () => { const v = parseInt($("size").value, 10); if (v > 0) setSize(v); else syncInputs(); });
+  $("x0").addEventListener("change", () => { const v = parseInt($("x0").value, 10); if (Number.isFinite(v)) setArena(v, st.y0, st.S); else syncInputs(); });
+  $("y0").addEventListener("change", () => { const v = parseInt($("y0").value, 10); if (Number.isFinite(v)) setArena(st.x0, v, st.S); else syncInputs(); });
+  $("jump").addEventListener("change", () => {
+    const v = $("jump").value;
+    if (v === "") return;
+    const r = st.M.arenas[+v];
+    setArena(r.x0, r.y0, r.S, true);
+  });
+  const mm = $("minimap");
+  let mmDrag = false;
+  const mmMove = e => {
+    const rect = mm.getBoundingClientRect();
+    const cx = (e.clientX - rect.left) / rect.width * NPOS, cy = (1 - (e.clientY - rect.top) / rect.height) * NPOS;
+    interact();
+    setArena(cx - st.S / 2, cy - st.S / 2, st.S);
+  };
+  mm.addEventListener("pointerdown", e => { mmDrag = true; mm.setPointerCapture(e.pointerId); mmMove(e); });
+  mm.addEventListener("pointermove", e => { if (mmDrag) mmMove(e); });
+  mm.addEventListener("pointerup", () => { mmDrag = false; settle(); });
+  mm.addEventListener("pointercancel", () => { mmDrag = false; settle(); });
+
+  const dc = $("d-canvas");
+  let drag = null;
+  dc.addEventListener("pointerdown", e => {
+    drag = { x: e.clientX, y: e.clientY, x0: st.x0, y0: st.y0 };
+    dc.setPointerCapture(e.pointerId); dc.classList.add("dragging");
+  });
+  dc.addEventListener("pointermove", e => {
+    const d = st.detail;
+    if (drag) {
+      const k = dc.clientWidth / st.S;
+      const dx = Math.round((e.clientX - drag.x) / k), dy = Math.round((e.clientY - drag.y) / k);
+      if (drag.x0 - dx !== st.x0 || drag.y0 + dy !== st.y0) { interact(); setArena(drag.x0 - dx, drag.y0 + dy, st.S); }
+      return;
+    }
+    if (!d) return;
+    const rect = dc.getBoundingClientRect();
+    const C = Math.floor((e.clientX - rect.left) / rect.width * d.W), R = d.W - 1 - Math.floor((e.clientY - rect.top) / rect.height * d.W);
+    if (C < 0 || R < 0 || C >= d.W || R >= d.W) return;
+    const x = mod(d.a.x0 + C * d.f, NPOS), y = mod(d.a.y0 + R * d.f, NPOS), val = d.r.v[R * d.W + C];
+    $("d-hover").textContent = (d.f > 1 ? "cells from (" + x + ", " + y + "), " + d.f + " × " + d.f : "cell (" + x + ", " + y + ")") + ": " + fmtVal(val);
+  });
+  const endDrag = () => { drag = null; dc.classList.remove("dragging"); settle(); };
+  dc.addEventListener("pointerup", endDrag);
+  dc.addEventListener("pointercancel", endDrag);
+  dc.addEventListener("pointerleave", () => { if (!drag) $("d-hover").textContent = "Hover over the map to read a cell."; });
+
+  $("rectify").addEventListener("change", () => { st.f.rectify = $("rectify").checked; filtersChanged(); });
+  document.querySelectorAll("#modes button").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+  $("sigma").addEventListener("input", () => { st.f.sigma = +$("sigma").value; $("sigma-out").textContent = st.f.sigma ? st.f.sigma.toFixed(1) : "off"; filtersChanged(); });
+  $("thresh").addEventListener("input", () => { st.f.thresh = +$("thresh").value; $("thresh-out").textContent = st.f.thresh + "%"; filtersChanged(); });
+  $("minsize").addEventListener("change", () => { const v = parseInt($("minsize").value, 10); st.f.minSize = v > 0 ? v : 1; $("minsize").value = st.f.minSize; filtersChanged(); });
+  $("sort").addEventListener("change", () => setSort($("sort").value));
+  $("band").addEventListener("change", () => setBand(+$("band").value));
+  $("rect-f").addEventListener("change", () => setRect(+$("rect-f").value, st.rect.D));
+  $("rect-D").addEventListener("change", () => setRect(st.rect.f, +$("rect-D").value));
+  $("res-measure").addEventListener("change", () => { st.res.measure = $("res-measure").value; renderResults(); });
+  $("res-k").addEventListener("change", () => { st.res.K = $("res-k").value; renderResults(); });
+  document.querySelectorAll("#res-inh button").forEach(b => b.addEventListener("click", () => {
+    st.res.inh = b.dataset.inh === "1";
+    document.querySelectorAll("#res-inh button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    renderResults();
+  }));
+  document.querySelectorAll("#hist-mode button").forEach(b => b.addEventListener("click", () => {
+    st.res.hist = b.dataset.w;
+    document.querySelectorAll("#hist-mode button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    renderResults();
+  }));
+  $("resort").addEventListener("click", () => {
+    if (st.sort === "random") { st.shuffleSeed++; shuffleOrder(); updateSortNote(); requestRender(); }
+    else computeSort();
+  });
+  $("perpage").addEventListener("change", () => { st.perPage = +$("perpage").value; st.page = 0; requestRender(); });
+  $("scale").addEventListener("change", () => { st.scale = $("scale").value; requestRender(); });
+  $("prev").addEventListener("click", () => changePage(-1));
+  $("next").addEventListener("click", () => changePage(1));
+  $("d-prev").addEventListener("click", () => stepSel(-1));
+  $("d-next").addEventListener("click", () => stepSel(1));
+  $("outlines").addEventListener("change", () => { st.outlines = $("outlines").checked; if (st.detail) drawOutlines($("d-overlay"), st.detail.r, st.detail.W); });
+
+  document.addEventListener("keydown", e => {
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const step = e.shiftKey ? 10 : 1;
+    let dx = 0, dy = 0;
+    if (e.key === "ArrowLeft") dx = -step;
+    else if (e.key === "ArrowRight") dx = step;
+    else if (e.key === "ArrowUp") dy = step;
+    else if (e.key === "ArrowDown") dy = -step;
+    else if (e.key === "PageDown" || e.key === "]") { e.preventDefault(); changePage(1); return; }
+    else if (e.key === "PageUp" || e.key === "[") { e.preventDefault(); changePage(-1); return; }
+    else return;
+    e.preventDefault();
+    interact();
+    setArena(st.x0 + dx, st.y0 + dy, st.S);
+  });
+
+  const onTheme = () => { buildLuts(); drawMinimap(); requestRender(); renderResults(); };
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", onTheme);
+  new MutationObserver(onTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  window.addEventListener("resize", () => { drawMinimap(); if (st.detail) drawOutlines($("d-overlay"), st.detail.r, st.detail.W); });
+}
+
+// ================================================================ start
+(async () => {
+  buildLuts();
+  try { await loadAll(); }
+  catch (e) { setStatus("Could not load the population data: " + errText(e), true); return; }
+  startWorker();
+  buildControls();
+  wireControls();
+  $("mode-hint").textContent = MODE_HINT[st.mode];
+  syncInputs();
+  drawMinimap();
+  renderChecks();
+  renderResults();
+  setStatus("Starting the GPU…");
+  await initEngine();
+  if (!st.engine && MLP_KEYS.includes(st.popKey)) setPop("grid");
+  requestRender();
+  await new Promise(r => setTimeout(r, 300));
+  runChecks();
+})();
+</script>
