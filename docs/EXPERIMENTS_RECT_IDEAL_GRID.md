@@ -98,4 +98,44 @@ mismatch).
 
 ## Results
 
-Pending: the probe (65 runs) and the field runs (30) were launched 2026-11-19.
+### Kernel match
+
+The measured half-width after inhibition is within 0.3 cells of the signed ideal at the same D
+(18.6 to 19.2 cells) for every code but the two with the fewest active units: 2% of 256 units
+(5 active per place) gives 17.0 and 2% of 512 gives 17.7.
+
+### Place fields (whole scaffold, 2026-11-19)
+
+**Single-unit fields depend on f and hardly at all on D.** Every statistic below varies by a few
+percent across D = 256 to 4096 at fixed f, which is draw noise: at matched kernel width each unit is
+close to a Gaussian random field with the code's kernel, thresholded, and D only sets how many such
+units there are. The table is D = 1024; the other D are in `grid_results.json` and on the page.
+
+| f | fields per unit, mean [range] | diameter / 12, median | mean | 5-95% | largest | cell-weighted mean | largest field's share of a unit | 20%-of-peak fields per unit, median diameter |
+|---|---|---|---|---|---|---|---|---|
+| 2% | 58 [35-79] | 2.50 | 2.67 | 0.70-5.25 | 10.8 | 4.0 | 0.09 | 34, 2.20 |
+| 5% | 121 [90-154] | 2.65 | 2.88 | 0.73-5.85 | 12.7 | 4.5 | 0.05 | 70, 2.23 |
+| 10% | 194 [151-237] | 2.84 | 3.16 | 0.76-6.70 | 16.4 | 5.3 | 0.04 | 124, 2.27 |
+| 20% | 251 [192-297] | 3.17 | 3.78 | 0.81-8.81 | 25.4 | 7.3 | 0.04 | 212, 2.36 |
+| 35% | 198 [137-270] | 3.46 | 4.95 | 0.81-14.5 | 58.8 | 15.0 | 0.10 | 302, 2.54 |
+| 50% | 79 [39-152] | 2.75 | 5.26 | 0.67-13.8 | 118 | 82 | 0.75 | 335, 2.76 |
+
+Diameters are in grid periods of 12 cells (the equivalent diameter of the field's area). About 1% of
+fields are under 9 cells at every f.
+
+* **Fields are 2.5 to 3.5 grid periods across** (30 to 42 cells) at the median, about the full width
+  at half maximum of the population kernel (2 x 18.8 cells = 3.1 periods). Sparser codes have
+  slightly smaller fields, because r grows with sparsity to hold the kernel width.
+* **Every unit has many fields over the scaffold**, from 58 at 2% to 251 at 20%: one field per
+  roughly 50,000 cells at 2%, so neighbouring fields of a unit are about 19 grid periods apart.
+* **The count peaks at 20% and falls after it because the active regions join.** At 50% (threshold
+  at the median) one connected web holds 75% of each unit's active area, the percolation of a 2D
+  Gaussian field's excursion set at its median. At 35% the regions are still mostly separate (largest
+  field 10% of a unit's active area) but the 95th-percentile field is already 14.5 periods across.
+* **At 20% of each unit's peak** the fields are smaller (median 2.2 to 2.8 periods) and the count
+  rises monotonically with f, since the 20% line cuts the joined regions of dense codes back into
+  separate peaks.
+
+### Hopfield probe
+
+Pending (65 runs launched 2026-11-19).
