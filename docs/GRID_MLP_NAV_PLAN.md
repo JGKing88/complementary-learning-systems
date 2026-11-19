@@ -1273,8 +1273,10 @@ over persistent activity alone.
 
 Status (2026-11-17). In the arena, activity holds about 5 goals after 300k
 steps whatever the cell, width or curriculum, and each further goal costs
-about two to three times the training of the last (§7b.11). Idea 2's plastic
-MLP holds 7.8 at N = 30 on the same test. With perfect keys and no arena, an
+about two to three times the training of the last (§7b.11). Reading with
+views from the arena's own visit walk, as the clean control reads with the
+write key, raises this to 6.0 and leaves the growing cost in place
+(§7b.12). Idea 2's plastic MLP holds 7.8 at N = 30 on the same test. With perfect keys and no arena, an
 LSTM of width 2048 holds 17.5 of 20 (§7b.10).
 
 Idea 4 differs from idea 3 (§7). Idea 3's GRU has to decode directions, hold
@@ -1938,6 +1940,70 @@ at N = 100, a linear delta rule on fixed keys 12.5 and 14.4, and a
 nearest-neighbour table on fixed keys 0.99 of 100. Activity wins for a
 handful of goals (0.86 to 0.92 at N = 6 against idea 2's 0.68 to 0.72) and
 holds fewer at N = 30 (5.1 at best against idea 2's 7.8). One seed per arm.
+
+### 7b.12 Reading from the write walk (2026-11-18)
+
+Reading each arena with views from its own visit walk changes the result
+little. Trained and tested that way, the strict-gate LSTM 2048 holds 6.0
+goals at best (0.30 at N = 20), against 5.2 for the same recipe on random
+views (§7b.11), and its curriculum is no faster. Each further length still
+costs more than the last, and it trains only to T = 6 by 300k steps. The
+read key, the first of the three differences with the clean control left
+in §7b.11, does not set the arena's cost per goal.
+
+Runs. `--read_views walk` in `analysis/idea4/train_experience.py` (commit
+8ad0eb9, snapshot i4_v20). Copy reads of a visited arena draw steps (cell
+and heading) of its own visit walk, and a carried revisit replays a stretch
+of it; unseen arenas keep random views. 34 to 38% of a walk's steps lie
+within 1.5 cells of the goal, where repeating the read cell's own grid
+phases scores as correct with no memory, so walk reads use only steps
+farther than 1.5 cells, and replayed steps there get no phase loss.
+Otherwise as the strict LSTM 2048 of §7b.11. Output
+`experience_h2048_raw_gate95_walkread_lstm_s0` (jobs 29542294, 29542295).
+Tests: `eval_many.py --read_views walk|random`, 64 held-out lifetimes (jobs
+29587022, 29587023; the random-trained models read from walks in job
+29542300); results `eval_many/arena_h2048_*_step300000_{walk,random,walkread}.json`.
+
+Curriculum (step at which each length was first logged):
+
+| run | T = 3 | 4 | 5 | 6 | 7 | T at 300k |
+|---|---|---|---|---|---|---|
+| strict LSTM 2048, random reads (§7b.11) | 7.1k | 17.4k | 37.3k | 91.1k | 236.7k | 7 |
+| strict LSTM 2048, walk reads | 12.2k | 20.5k | 60.9k | 124.2k | | 6 |
+
+Retention at 300k (copy reads; goals held = N times accuracy, best N up to
+30):
+
+| trained on | read from | N = 4 | 5 | 6 | 8 | 10 | 20 | 30 | 100 | goals held |
+|---|---|---|---|---|---|---|---|---|---|---|
+| random views, strict | random | 0.98 | 0.95 | 0.86 | 0.61 | 0.48 | 0.23 | 0.15 | 0.03 | 5.2 |
+| random views, strict | walk | | 0.98 | 0.90 | 0.64 | 0.51 | 0.25 | 0.16 | | 5.4 |
+| walk views, strict | walk | 0.99 | 0.94 | 0.89 | 0.67 | 0.55 | 0.30 | 0.20 | 0.07 | 6.0 |
+| walk views, strict | random | 0.84 | 0.65 | 0.57 | 0.43 | 0.32 | 0.17 | 0.11 | 0.04 | 3.4 |
+| random views, lax | random | | 0.78 | 0.69 | 0.55 | 0.44 | 0.24 | 0.17 | 0.06 | 5.1 |
+| random views, lax | walk | | 0.88 | 0.84 | 0.69 | 0.60 | 0.33 | 0.25 | | 7.4 |
+
+Reading.
+1. Familiar read views do not make goals cheaper to learn. Steps spent at
+   each length with walk reads: 12.1k at T = 2, 8.3k at 3, 40.4k at 4,
+   63.4k at 5, and 176k at 6 without passing it. With random reads: 7.0k,
+   10.3k, 19.9k, 53.9k and 145.6k.
+2. Matching training and test gains about one goal: 6.0 with walk views
+   for both against 5.2 with random views for both, from one fewer trained
+   length.
+3. A model reads well only from the views it was trained to read from. The
+   walk-trained model read from random views holds 3.4 goals. The
+   random-trained models read from walk views gain a little (strict 5.2 to
+   5.4) or two goals (lax 5.1 to 7.4). Walk reads lie a few cells from the
+   goal, nearer than random cells, so part of any gain from walk reads may
+   be read distance rather than familiarity.
+4. The first and the newest goals stay. Walk-trained, walk reads: first
+   0.96 and newest 0.98 at N = 30, 0.64 and 0.98 at N = 100.
+
+What remains. Two differences with the clean control are untested: the
+goal is taken from the agent's own grid phases at the flagged step rather
+than given as an input, and the loss falls on reads after every visit
+rather than on one read at the end.
 
 ## 8. Decisions and open items
 
