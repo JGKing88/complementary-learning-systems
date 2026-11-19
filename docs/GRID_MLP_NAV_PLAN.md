@@ -2005,6 +2005,50 @@ goal is taken from the agent's own grid phases at the flagged step rather
 than given as an input, and the loss falls on reads after every visit
 rather than on one read at the end.
 
+### 7b.13 How idea 4 enters the comparison (decided 2026-11-19)
+
+Idea 4 is compared as a memory, on how its capacity scales, not as an
+agent. The agent protocols hold 3 to 5 goals at a time, inside idea 4's
+range of about 6, so an agent comparison would hide the difference, which
+appears only as the number of goals grows. (An agent run in that small
+regime is still worth having; §7b.14.)
+
+One test for every memory: N held-out arenas written once each, read from
+random views using copies of the state after the last write, correct within
+1.5 cells (chance about 0.02), N from 1 to 100 (§7b.2; for idea 4
+`analysis/idea4/eval_many.py`). The memories are idea 1's table, Hopfield,
+idea 2's plastic MLP, the linear delta rule on fixed keys and idea 4. Three
+plots:
+
+1. Capacity. Accuracy and goals held against N. So far the table holds
+   nearly all 100, the delta rule 12.5 at N = 30 and 14.4 at N = 100,
+   idea 2 7.8 and 11, idea 4 about 6.
+2. The cost of one more goal. The table, Hopfield and the plastic MLP add a
+   goal with one write, without training to the lifetime length. Idea 4
+   has to be trained to the length it will face, and each length costs two
+   to three times the steps of the one before (§7b.11). Plot the trained
+   length against training steps on a log axis, with the clean control's
+   curve (§7b.10) beside it.
+3. Size. Goals held against the numbers the memory stores. Idea 4's LSTM
+   2048 state is 4,096 numbers and a goal is 12, so it has room for over
+   300 goals and holds about 6; widening from 1024 to 2048 changes little
+   in the arena (4.4 to 5.5 goals across arms). The limit is learning to
+   write, not room.
+
+Both idea 4 regimes belong in the figure. With exact keys and no arena
+(§7b.10) it nearly matches fast weights (17.5 against 18.2 of 20) at four
+times the width, a curriculum and about 15 times the training; in the arena
+it stops near 6 (§7b.11, §7b.12). The claim is that activity can store
+goals but learning to write them is costly, much more so in the arena, not
+that activity cannot store.
+
+Before the figure:
+- Hopfield on this test. It needs a key: a view key as idea 1 uses, or the
+  key Agent-HaSH uses. Agent-HaSH's Hopfield is a linear associative memory
+  (its tanh stays in the linear range), so it should land near the
+  delta-rule row; not yet run.
+- A second seed of the strict-gate LSTM 2048, for the cost curve.
+
 ## 8. Decisions and open items
 
 | | |
@@ -2019,6 +2063,7 @@ rather than on one read at the end.
 | Idea 2 `M` | MLP; phase outputs + confidence; panorama view input — **agreed** |
 | Idea 2 training | Default in §6.2 and §6.3. One plastic MLP, meta-learn θ₀ and α, supervised write at the store, PPO does not train `M`. **Decided.** Variants in §6.5, small choices in §6.6. |
 | Idea 3 | GRU with the live view, `g_t`, previous action and reward; no memory readout. Hidden state carried across visits (stage 1), then across the continual protocol (stage 2). **Decided**; rest open (§7.4). |
+| Idea 4 | Compared as a memory on one retention test: capacity, cost of one more goal and size, against idea 1's table, Hopfield, idea 2 and the delta rule (§7b.13). Agent run only in a ≤6-goal regime (§7b.14). **Decided.** |
 | d0_base recipe | later variant |
 | Learned store head | later, once the oracle version works |
 
