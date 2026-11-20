@@ -1,7 +1,13 @@
 """Vector-HaSH place cells at matched sparsity, for each grid-module set of the rectified-ideal grid.
 
-    python -m analysis.rect_ideal.hpc fields --variant m111213     # place fields, all six f
-    python -m analysis.rect_ideal.hpc export                       # page data, every variant
+    python -m analysis.rect_ideal.hpc fields --variant m111213_onehot   # place fields, all six f
+    python -m analysis.rect_ideal.hpc export                            # page data, every variant
+
+Variants are a module set (11, 12, 13 or 11, 15, 23) and an input: ``onehot`` is the layer as the
+model builds it; ``smooth`` feeds the same weights the smoothed grid code (Gaussian bumps, FWHM 0.25
+of each module's period, the encoder's input), folded into ``W_s = Wpg B`` so that
+``Wpg g_smooth = W_s g_onehot`` at every position (``smoothed_wpg``, copied from the tuning viewer's
+export) and everything below applies unchanged with ``W_s``.
 
 The place layer is ``VectorHash.build_scaffold``'s: ``p = relu(Wpg g - theta)`` with ``g`` the
 one-hot grid code (one active phase cell per module) and ``Wpg`` (Np x Ng) i.i.d. N(0, 1) with
@@ -35,17 +41,20 @@ import time
 import numpy as np
 import torch
 
+from analysis.hopfield_probe.encode import grid_codes
 from analysis.rect_ideal import fields as F
 from analysis.rect_ideal.codes import FS, VARIANTS, f_tag
 from cls_paths import results_dir
 
-HPC_VARIANTS = {
+HPC_MODULES = {
     "m111213": {"lambdas": (11, 12, 13), "lambda_ref": VARIANTS["m111213"]["lambda_ref"],
                 "label": "11, 12, 13"},
     "m111523": {"lambdas": (11, 15, 23), "lambda_ref": VARIANTS["m111523_r16"]["lambda_ref"],
                 "label": "11, 15, 23"},
 }
-NP, C, SEED = 400, 0.5, 0
+INPUTS = ("onehot", "smooth")
+HPC_VARIANTS = {f"{m}_{i}": dict(v, modules=m, input=i) for i in INPUTS for m, v in HPC_MODULES.items()}
+NP, C, SEED, FWHM = 400, 0.5, 0, 0.25
 REF = {"x0": 1708, "y0": 1710, "S": 16}
 N_CHECK = 16
 
@@ -94,10 +103,27 @@ def matched_thresh(sums, target: float) -> float:
     return 0.5 * (lo + hi)
 
 
+def smoothed_wpg(Wpg: np.ndarray, lambdas, fwhm: float) -> np.ndarray:
+    """``W_s`` with ``Wpg @ grid_codes(.., fwhm) == W_s @ grid_codes(.., 0)`` at every position.
+
+    Module ``m``'s block of the smoothed code depends only on that module's phase, so it is
+    ``B_m e_phase`` with ``B_m[r, c]`` the block's unit ``r`` at phase ``c``.
+    """
+    Ws, off = np.array(Wpg, dtype=np.float64), 0
+    for l in lambdas:
+        i, j = np.meshgrid(np.arange(l), np.arange(l), indexing="ij")
+        B = grid_codes(lambdas, i.ravel(), j.ravel(), fwhm).astype(np.float64)[:, off:off + l * l].T
+        Ws[:, off:off + l * l] = Wpg[:, off:off + l * l] @ B
+        off += l * l
+    return Ws
+
+
 def layer(variant: str):
-    lam = HPC_VARIANTS[variant]["lambdas"]
+    """``(lambdas, W_eff, Wpg)``: the weights the one-hot arithmetic uses, and the drawn ``Wpg``."""
+    v = HPC_VARIANTS[variant]
+    lam = v["lambdas"]
     W = draw_wpg(NP, sum(l * l for l in lam), C, SEED)
-    return lam, W
+    return lam, (smoothed_wpg(W, lam, FWHM) if v["input"] == "smooth" else W), W
 
 
 def rates_np(W, lambdas, thresh, xs, ys) -> np.ndarray:
@@ -132,8 +158,82 @@ class HpcCode:
         return self(np.repeat(np.arange(x0, x1), F.NPOS), np.tile(np.arange(F.NPOS), x1 - x0))
 
 
+def label_unit_hist(job):
+    """One cell's fields as an area histogram: a place cell can have a million single-cell fields
+    on the 11, 15, 23 scaffold, so the per-field areas ``fields.py`` keeps do not fit in memory."""
+    areas = F.label_unit(job)
+    vals, cnts = np.unique(areas, return_counts=True)
+    return (vals, cnts, int(areas.size), int(areas.sum()), int(areas.max()) if areas.size else 0,
+            int((areas >= F.MIN_AREA).sum()))
+
+
+def describe_w(vals, cnts) -> dict | None:
+    """``fields.describe`` of the values ``vals`` (ascending) repeated ``cnts`` times, exactly,
+    with numpy's default (linear) percentiles."""
+    vals, cnts = np.asarray(vals, float), np.asarray(cnts, np.int64)
+    N = int(cnts.sum())
+    if N == 0:
+        return None
+    mean = float((vals * cnts).sum() / N)
+    cum = np.cumsum(cnts)
+
+    def pct(q):
+        pos = q / 100 * (N - 1)
+        lo = int(math.floor(pos))
+        hi = min(lo + 1, N - 1)
+        vlo, vhi = vals[np.searchsorted(cum, lo + 1)], vals[np.searchsorted(cum, hi + 1)]
+        return float(vlo + (pos - lo) * (vhi - vlo))
+    return {"n": N, "mean": mean, "sd": float(math.sqrt(((vals - mean) ** 2 * cnts).sum() / N)),
+            "min": float(vals[0]), "p5": pct(5), "p25": pct(25), "median": pct(50),
+            "p75": pct(75), "p95": pct(95), "max": float(vals[-1])}
+
+
+def summarise_hist(per_unit) -> tuple[dict, dict]:
+    """``fields.summarise``'s summary, from per-cell area histograms."""
+    counts = np.array([u[2] for u in per_unit])
+    counts9 = np.array([u[5] for u in per_unit])
+    active = np.array([u[3] for u in per_unit], dtype=float)
+    largest = np.array([u[4] / u[3] if u[2] else np.nan for u in per_unit])
+    allv = np.concatenate([u[0] for u in per_unit]) if counts.sum() else np.zeros(0, np.int64)
+    allc = np.concatenate([u[1] for u in per_unit]) if counts.sum() else np.zeros(0, np.int64)
+    A, inv = np.unique(allv, return_inverse=True)
+    Cn = np.bincount(inv, weights=allc, minlength=A.size).astype(np.int64)
+    diam = 2.0 * np.sqrt(A / math.pi)
+    big = A >= F.MIN_AREA
+    lg = np.log10(np.maximum(diam, 1e-9) / F.LAMBDA_REF)
+    hist_n, _ = np.histogram(lg, bins=F.LOG_EDGES, weights=Cn)
+    hist_a, _ = np.histogram(lg, bins=F.LOG_EDGES, weights=Cn * A)
+    cmax = int(counts.max()) if counts.size else 0
+    c_edges = np.unique(np.linspace(0, cmax + 1, 61).round()).astype(int)
+    c_hist, _ = np.histogram(counts, bins=c_edges)
+    n_fields = int(Cn.sum())
+    s = {
+        "n_fields": n_fields,
+        "fields_per_unit": F.describe(counts),
+        "units_without_field": int((counts == 0).sum()),
+        "fields_per_unit_min9": F.describe(counts9),
+        "share_fields_under9": float(Cn[~big].sum() / n_fields) if n_fields else None,
+        "area_cells": describe_w(A, Cn),
+        "diam_cells": describe_w(diam, Cn),
+        "diam_over_lambda": describe_w(diam / F.LAMBDA_REF, Cn),
+        "diam_over_lambda_min9": describe_w(diam[big] / F.LAMBDA_REF, Cn[big]),
+        "diam_over_lambda_area_weighted_mean": (
+            float((diam * A * Cn).sum() / (A * Cn).sum() / F.LAMBDA_REF) if n_fields else None),
+        "coverage_per_unit": F.describe(active / F.NPOS ** 2),
+        "largest_field_share": F.describe(largest[np.isfinite(largest)]),
+        "hist_log10_diam_over_lambda": {"edges": F.LOG_EDGES.tolist(),
+                                        "fields": hist_n.round().astype(int).tolist(),
+                                        "cells": hist_a.round().astype(int).tolist()},
+        "hist_fields_per_unit": {"edges": c_edges.tolist(), "units": c_hist.tolist()},
+    }
+    arrays = {"fields_per_unit": counts, "coverage": active / F.NPOS ** 2,
+              "area_values": A, "area_counts": Cn}
+    return s, arrays
+
+
 def field_pass(code, D: int, rows: int, workers: int, out: dict) -> dict:
-    """``fields.py``'s two passes and labelling (support, 20% of peak), into ``out``."""
+    """``fields.py``'s two passes and labelling (support, 20% of peak), into ``out``; the summaries
+    come from per-cell area histograms (``summarise_hist``)."""
     N, NB = F.NPOS, F.NB
     bits = {w: np.zeros((D, N, NB), dtype=np.uint8) for w in F.DEFS}
     peak = torch.zeros(D, dtype=torch.float64)
@@ -158,8 +258,8 @@ def field_pass(code, D: int, rows: int, workers: int, out: dict) -> dict:
     arrays = {}
     with mp.get_context("fork").Pool(workers) as pool:
         for w in F.DEFS:
-            areas = pool.map(F.label_unit, [(w, u) for u in range(D)], chunksize=8)
-            out[w], arr = F.summarise(areas)
+            per_unit = pool.map(label_unit_hist, [(w, u) for u in range(D)], chunksize=8)
+            out[w], arr = summarise_hist(per_unit)
             arrays.update({f"{w}_{k}": v for k, v in arr.items()})
     F._BITS.clear()
     return arrays
@@ -167,7 +267,7 @@ def field_pass(code, D: int, rows: int, workers: int, out: dict) -> dict:
 
 def run_fields(variant: str, out_dir: str, rows: int, workers: int) -> None:
     torch.set_num_threads(workers)
-    lam, W = layer(variant)
+    lam, W, _ = layer(variant)
     N = int(np.prod(lam))
     F.NPOS, F.NB, F.LAMBDAS = N, (N + 7) // 8, lam
     F.LAMBDA_REF = HPC_VARIANTS[variant]["lambda_ref"]
@@ -178,7 +278,8 @@ def run_fields(variant: str, out_dir: str, rows: int, workers: int) -> None:
         t0 = time.time()
         th = matched_thresh(sums, f)
         code = HpcCode(W, lam, th)
-        out = {"variant": variant, "label": f"vhpc {f_tag(f)} {variant}", "f": f, "thresh": th,
+        out = {"variant": variant, "input": HPC_VARIANTS[variant]["input"], "fwhm": FWHM,
+               "label": f"vhpc {f_tag(f)} {variant}", "f": f, "thresh": th,
                "active_exact": active_fraction(sums, th), "Np": NP, "c": C, "seed": SEED,
                "lambdas": list(lam), "npos": N, "lambda_ref": F.LAMBDA_REF,
                "min_area": F.MIN_AREA, "peak_frac": F.PEAK_FRAC, "connectivity": 4}
@@ -216,21 +317,25 @@ def export(out: str) -> None:
     r_, c_ = np.divmod(np.arange(REF["S"] ** 2), REF["S"])
     index = []
     for variant, v in HPC_VARIANTS.items():
-        lam, W = layer(variant)
+        lam, W, Wpg = layer(variant)
         N = int(np.prod(lam))
         xs, ys = (REF["x0"] + c_) % N, (REF["y0"] + r_) % N
+        # Check values straight from the model's arithmetic (the smoothed code times Wpg for the
+        # smoothed input), so the page's check also covers the fold into W_s.
+        g = grid_codes(lam, xs, ys, FWHM if v["input"] == "smooth" else 0.0).astype(np.float64) @ Wpg.T
         sums = phase_sums(W, lam)
         units = np.unique(np.round(np.linspace(0, NP - 1, N_CHECK)).astype(int))
         codes, refs = [], []
         for f in FS:
             th = matched_thresh(sums, f)
-            refs.append(rates_np(W, lam, th, xs, ys)[:, units].astype(np.float32).ravel())
+            refs.append(np.maximum(g - th, 0.0)[:, units].astype(np.float32).ravel())
             codes.append({"key": f_tag(f), "f": f, "thresh": th, "active_exact": active_fraction(sums, th)})
         with open(os.path.join(out, f"hpc_wpg_{variant}.b64.txt"), "w") as fh:
             fh.write(base64.b64encode(np.ascontiguousarray(W, dtype="<f8").tobytes()).decode())
         with open(os.path.join(out, f"hpc_ref_{variant}.b64.txt"), "w") as fh:
             fh.write(base64.b64encode(np.concatenate(refs).astype("<f4").tobytes()).decode())
-        man = {"variant": variant, "label": v["label"], "lambdas": list(lam), "npos": N,
+        man = {"variant": variant, "modules": v["modules"], "input": v["input"], "fwhm": FWHM,
+               "label": v["label"], "lambdas": list(lam), "npos": N,
                "lambda_ref": v["lambda_ref"], "Np": NP, "Ng": int(W.shape[1]), "c": C, "seed": SEED,
                "Fs": list(FS), "codes": codes, "check_units": units.tolist(), "ref_arena": REF}
         with open(os.path.join(out, f"hpc_manifest_{variant}.json"), "w") as fh:
@@ -243,7 +348,8 @@ def export(out: str) -> None:
                 row["kernel"] = {k: x for k, x in row["kernel"].items() if not k.startswith("curve")}
             with open(dest, "w") as fh:
                 json.dump(rows, fh)
-        index.append({"key": variant, "label": v["label"], "npos": N, "lambda_ref": v["lambda_ref"],
+        index.append({"key": variant, "modules": v["modules"], "input": v["input"],
+                      "label": v["label"], "npos": N, "lambda_ref": v["lambda_ref"],
                       "has_results": os.path.exists(dest)})
         print(variant, [(c["key"], round(c["thresh"], 4), round(c["active_exact"], 5)) for c in codes])
     with open(os.path.join(out, "hpc_variants.json"), "w") as fh:

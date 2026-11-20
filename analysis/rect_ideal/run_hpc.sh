@@ -1,8 +1,8 @@
 #!/bin/bash
 # Place fields of the Vector-HaSH place layer at the grid's six sparsities, one task per module set
-# (analysis/rect_ideal/hpc.py): 0 = 11-12-13, 1 = 11-15-23.
+# and input (analysis/rect_ideal/hpc.py): 0, 1 = one-hot 11-12-13, 11-15-23; 2, 3 = smoothed.
 #
-#   bash analysis/rect_ideal/run_hpc.sh [ARRAY]            # submits; default 0-1
+#   bash analysis/rect_ideal/run_hpc.sh [ARRAY]            # submits; default 0-3
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
 set -euo pipefail
@@ -10,13 +10,13 @@ WT=${RECT_WT:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"}
 export RECT_WT=$WT
 PY=/home/jackking/.conda/envs/cls/bin/python
 OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/rect_ideal_grid/hpc}
-VARS=(m111213 m111523)
+VARS=(m111213_onehot m111523_onehot m111213_smooth m111523_smooth)
 
 if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
     mkdir -p "$OUT/logs"
     exec sbatch --job-name=rect_hpc --partition=pi_evelina9,ou_bcs_normal \
         --time=2:00:00 --cpus-per-task=16 --mem=24G \
-        --array="${1:-0-1}" --output="$OUT/logs/hpc_%A_%a.out" "$0"
+        --array="${1:-0-3}" --output="$OUT/logs/hpc_%A_%a.out" "$0"
 fi
 
 cd "$WT"
