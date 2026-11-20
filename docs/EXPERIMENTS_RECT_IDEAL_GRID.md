@@ -252,3 +252,17 @@ Sizes for both are in grid periods of 15.60 cells (the geometric mean), and in c
 `rect_ideal_grid_m111523_rs/`; launch with `VARIANT=<name> bash analysis/rect_ideal/run_probe.sh` and
 `run_fields.sh`. One test field run (`m111523_rs`, 10% of 256 units) measured 565 fields per unit
 against 574 predicted.
+
+## Vector-HaSH place cells at the same sparsities (2026-11-20)
+
+`analysis/rect_ideal/hpc.py`, launched with `run_hpc.sh` (one task per module set). The place layer
+is `VectorHash.build_scaffold`'s, `p = relu(Wpg g - theta)` on the one-hot grid code: Np = 400 (the
+controller's setting), `Wpg` i.i.d. N(0, 1) with about half the entries pruned (c = 0.5), drawn after
+`np.random.seed(0)` (the recipe `analysis/tuning_viewer/export.py` checks against `build_scaffold`).
+Each module set has its own draw: 434 grid inputs for 11, 12, 13 and 875 for 11, 15, 23. One global
+threshold per sparsity f makes a share f of all (cell, place) pairs active over the whole scaffold,
+exactly: the periods are pairwise coprime, so along each axis every combination of module phases
+occurs once, and a cell's input over the scaffold is its weight sum over every combination of one
+phase per module (`matched_thresh`, bisection on `active_fraction`). Cells differ in how much they
+fire, as in Vector-HaSH. Fields, sizes and kernels use `fields.py`'s definitions and summaries.
+Results: `$CLS_RESULTS/rect_ideal_grid/hpc/` (`vhpc_<variant>_fXX.json`, `hpc_results_<variant>.json`).
