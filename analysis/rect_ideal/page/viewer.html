@@ -298,8 +298,8 @@ table.heat .cell.na { background: var(--surface-2); color: var(--muted); }
           <div class="row"><label for="res-measure">Measure</label><select id="res-measure"></select></div>
           <div class="row" id="res-k-row"><label for="res-k">Stored goals K</label><select id="res-k"></select></div>
           <div class="seg" id="res-inh">
-            <button type="button" data-inh="0" aria-pressed="true">No inhibition</button>
-            <button type="button" data-inh="1" aria-pressed="false">With inhibition</button>
+            <button type="button" data-inh="0" aria-pressed="false">No inhibition</button>
+            <button type="button" data-inh="1" aria-pressed="true">With inhibition</button>
           </div>
         </div>
         <p class="hint" id="res-def"></p>
@@ -353,7 +353,7 @@ let NPOS = 1716;
 const st = {
   M: null, pops: {}, mlp: {}, popKey: "rect",
   RM: null, RR: null, RX: null, rect: { f: 0.1, D: 1024 },
-  res: { measure: "err", K: "5", inh: false, hist: "fields", hover: -1 },
+  res: { measure: "err", K: "5", inh: true, hist: "fields", hover: -1 },
   x0: 808, y0: 808, S: 100,
   perPage: 64, page: 0, scale: "unit",
   sort: "id", order: null, orderPop: null, sortedFor: null, sortToken: 0, shuffleSeed: 1,
