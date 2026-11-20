@@ -2231,13 +2231,13 @@ function buildControls() {
   $("rect-D").replaceChildren(...st.RM.Ds.map(D => { const o = document.createElement("option"); o.value = String(D); o.textContent = D + " units (" + D / 2 + " waves)"; return o; }));
   $("rect-f").value = String(st.rect.f); $("rect-D").value = String(st.rect.D);
   showRect();
-  const ms = $("res-measure"), groups = {};
+  const ms = $("res-measure"), mgroups = {};
   for (const m of RES_MEASURES) {
-    if (!groups[m.group]) { const g = document.createElement("optgroup"); g.label = RES_GROUPS[m.group]; groups[m.group] = g; }
+    if (!mgroups[m.group]) { const g = document.createElement("optgroup"); g.label = RES_GROUPS[m.group]; mgroups[m.group] = g; }
     const o = document.createElement("option"); o.value = m.key; o.textContent = m.label + (m.unit ? " (" + m.unit + ")" : "");
-    groups[m.group].append(o);
+    mgroups[m.group].append(o);
   }
-  ms.replaceChildren(...Object.values(groups));
+  ms.replaceChildren(...Object.values(mgroups));
   ms.value = st.res.measure;
   $("res-k").replaceChildren(...["1", "3", "5", "10", "20"].map(k => { const o = document.createElement("option"); o.value = k; o.textContent = k; return o; }));
   $("res-k").value = st.res.K;
