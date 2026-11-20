@@ -420,6 +420,22 @@ class RolloutCollector:
                     memory_mask = np.zeros(B, dtype=bool)
                     hopfield_signal = torch.zeros(B, signal_dim, device=self.device)
                     new_W, chart_np, multistep_q = None, None, {}
+                elif self.memory_readout is not None and getattr(
+                        hopfields, "is_recurrent_goal_bank", False):
+                    # Idea 4's recurrent memory (memory/recurrent_goal.py):
+                    # the oracle write happens inside this read, so its flag
+                    # is set first, by the rule step 7 applies to the table.
+                    # Rows that finished their trial are not stepped.
+                    in_explore_pre = cfg.explore_steps is None or t < cfg.explore_steps
+                    store_now = ((auto_store_active & at_goal_mask) & ~agent_goal_store_fired
+                                 if (allow_store and in_explore_pre)
+                                 else np.zeros(B, dtype=bool))
+                    hopfields.set_store_flags(store_now)
+                    _d, q_full, memory_mask, memory_conf = hopfields.signal(
+                        self.memory_readout, vec.obs_batch(), obs_psi(vec, None),
+                        positions, env_offset, active=~done)
+                    hopfield_signal = torch.from_numpy(_d).float().to(self.device)
+                    new_W, chart_np, multistep_q = None, None, {}
                 elif self.memory_readout is not None:
                     # Sensory-keyed recall + grid MLP: d rides the q slot,
                     # c goes on memory_conf. Queried with the view the agent
@@ -767,10 +783,12 @@ class RolloutCollector:
                 # would claim "goal in memory" without actually storing it).
                 if allow_store and in_explore:
                     agent_goal_store_fired |= (effective_store & at_goal_mask)
-                    if self.memory_readout is not None:
+                    if self.memory_readout is not None and not getattr(
+                            hopfields, "is_recurrent_goal_bank", False):
                         # The oracle store: (four-heading view at the goal,
                         # the goal's grid code) -- the goal CELL, as the
                         # Hopfield path's allow_offcell_store=False does.
+                        # (Idea 4's memory wrote inside the read above.)
                         for b in np.flatnonzero(effective_store):
                             self.memory_readout.write_goal(
                                 hopfields[b], env, vec._goal, env_offset)
@@ -1063,6 +1081,14 @@ class RolloutCollector:
             if self.no_memory:
                 q_final = np.zeros((B, 2), dtype=np.float32)
                 sig_final = torch.zeros(B, signal_dim, device=self.device)
+                multistep_q_final = {}
+            elif self.memory_readout is not None and getattr(
+                    hopfields, "is_recurrent_goal_bank", False):
+                # Read without stepping: the next rollout starts elsewhere.
+                _d_final, q_final, _, conf_final = hopfields.signal(
+                    self.memory_readout, vec.obs_batch(), obs_psi(vec, None),
+                    pos_final, env_offset, advance=False)
+                sig_final = torch.from_numpy(_d_final).float().to(self.device)
                 multistep_q_final = {}
             elif self.memory_readout is not None:
                 _d_final, q_final, _, conf_final = self.memory_readout.signal(

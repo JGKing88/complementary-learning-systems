@@ -178,3 +178,73 @@ def recurrent_signal(readout, memories, views, psi, positions, env_offset):
             s["ncos"] += 1
     channel = d * c[:, None] if readout.scale_q_by_c else d
     return channel.astype(np.float32), channel.astype(np.float32), has, c
+
+
+class RecurrentGoalBank(list):
+    """B rows' recurrent memories as one batched state, for the training
+    collectors (``rollout/collector.py``, ``rollout/lifetime.py``; plan
+    §7b.15).
+
+    It is a list of B placeholders so the collectors' per-row checks
+    (``isinstance(hopfields, list)``, ``hopfields[b]``) hold; the state lives
+    here, (layers, B, width). The collector sets the oracle store flags before
+    each read (``set_store_flags``), reads with ``signal``, and skips the
+    table's ``write_goal``: the write happens inside the flagged read. Rows
+    that are not ``active`` (a lifetime row that has finished its trial) are
+    not stepped, and ``advance=False`` reads without changing the state (the
+    truncation bootstrap).
+    """
+
+    is_recurrent_goal_bank = True
+
+    def __init__(self, path: str, B: int, device="cpu", arena_size: int = 20,
+                 c_scale: float = 0.5, c_min: float = 0.5):
+        super().__init__([None] * int(B))
+        self.path, self.device = str(path), str(device)
+        self.model = _load(self.path, self.device)
+        self.h = self.model.init_state(int(B), self.device)
+        self.flags = np.zeros(int(B), dtype=np.float32)
+        self.arena_size = int(arena_size)
+        self.c_scale, self.c_min = float(c_scale), float(c_min)
+        self.num_memories = 0                      # stores, for the logs
+
+    def set_store_flags(self, flags) -> None:
+        self.flags = np.asarray(flags, dtype=np.float32).reshape(len(self))
+        self.num_memories += int(self.flags.sum())
+
+    @torch.no_grad()
+    def signal(self, readout, views, psi, positions, env_offset, active=None, advance=True):
+        """``(channel (B,2), q (B,2), has_memory (B,), c (B,))``, as
+        ``GridMemoryReadout.signal``."""
+        B = len(self)
+        lam = readout.grid_code.lambdas
+        positions = np.asarray(positions).reshape(-1, 2)
+        ox, oy = int(env_offset[0]), int(env_offset[1])
+        canv = canvas(np.asarray(views), np.asarray(psi).reshape(-1))
+        own = goal_phases(positions[:, 0] + ox, positions[:, 1] + oy, lam)
+        x = torch.from_numpy(canv).to(self.device)[None]
+        ex = torch.from_numpy(np.concatenate([own, self.flags[:, None]], 1)).to(self.device)[None]
+        ph_t, c_t, h2 = self.model(x, self.h, extra=ex)
+        if advance:
+            if active is None:
+                self.h = h2
+            else:
+                keep = torch.from_numpy(np.asarray(active, dtype=bool)).to(self.device)
+                self.h = torch.where(keep.view(1, -1, 1), h2, self.h)
+            self.flags = np.zeros(B, dtype=np.float32)
+        ph = ph_t[0].cpu().numpy()
+        sig = torch.sigmoid(c_t[0]).cpu().numpy()
+        size = self.arena_size
+        gx, gy = np.meshgrid(np.arange(size), np.arange(size), indexing="ij")
+        cells = np.stack([gx.ravel(), gy.ravel()], 1)
+        goal_cell = cells[decode_cells(ph, cells + np.array([ox, oy]), lam)]
+        has = sig >= self.c_min
+        d = np.zeros((B, 2), dtype=np.float32)
+        if has.any():
+            g_now = readout.grid_code.at_local(positions[has], env_offset)
+            g_goal = readout.grid_code.at_local(goal_cell[has], env_offset)
+            d[has] = readout.mlp.direction(torch.from_numpy(g_now),
+                                           torch.from_numpy(g_goal)).numpy()
+        c = (sig * self.c_scale).astype(np.float32)
+        channel = d * c[:, None] if readout.scale_q_by_c else d
+        return channel.astype(np.float32), channel.astype(np.float32), has, c

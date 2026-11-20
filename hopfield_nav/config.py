@@ -319,6 +319,14 @@ class AgentConfig:
     # scale_q_by_c, the policy gets only c * d -- magnitude folded into the
     # direction, the analog of Agent-HaSH's raw q. GRID_MLP_NAV_PLAN §9.6.
     input_memory_conf: bool = True
+    # Idea 4 (GRID_MLP_NAV_PLAN §7b.15): a trained recurrent memory (a
+    # memory.pt from analysis/idea4/train_protocol.py) in place of idea 1's
+    # table, under memory_backend "sensory_kv" so d and c reach the policy on
+    # the same channels. Frozen; it steps once per env step on the live view,
+    # the agent's own grid phases and the oracle store flag
+    # (memory/recurrent_goal.py). c = sigmoid(logit) * recurrent_c_scale.
+    recurrent_memory_checkpoint: str = ""
+    recurrent_c_scale: float = 0.5
     # memory_backend "none" is idea 3 (GRID_MLP_NAV_PLAN §7): no memory
     # module, so the GRU's hidden state is the only place a goal can live, and
     # every path that would keep a memory across visits keeps the hidden

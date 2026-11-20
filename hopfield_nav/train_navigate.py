@@ -1138,6 +1138,8 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "grid_mlp_checkpoint": ("agent.grid_mlp_checkpoint",),
     "scale_q_by_c": ("agent.scale_q_by_c",),
     "input_memory_conf": ("agent.input_memory_conf",),
+    "recurrent_memory_checkpoint": ("agent.recurrent_memory_checkpoint",),
+    "recurrent_c_scale": ("agent.recurrent_c_scale",),
     "input_grid_code": ("agent.input_grid_code",),
     "aux_goal_weight": ("agent.aux_goal_weight",),
     "aux_disp_weight": ("agent.aux_disp_weight",),
@@ -1381,6 +1383,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="sensory_kv: feed c*d instead of d (Agent-HaSH-parity variant). c is fed on memory_conf either way.")
     p.add_argument("--input_memory_conf", action=argparse.BooleanOptionalAction, default=True,
                    help="sensory_kv: feed c on its own memory_conf channel (default). --no-input_memory_conf with --scale_q_by_c leaves only c*d, the analog of Agent-HaSH's raw q.")
+    p.add_argument("--recurrent_memory_checkpoint", default="",
+                   help="Idea 4 (GRID_MLP_NAV_PLAN §7b.15): a trained recurrent memory "
+                        "(analysis/idea4/train_protocol.py memory.pt), frozen, in place of "
+                        "sensory_kv's table; lifetime stages, one memory per lifetime.")
+    p.add_argument("--recurrent_c_scale", type=float, default=0.5,
+                   help="Idea 4: c fed to the policy = sigmoid(memory logit) times this.")
     p.add_argument("--hopfield_storage_rule", choices=["hebb", "proj"], default="hebb",
                    help="Hopfield storage rule: hebb (default) or proj, the projection rule (stored patterns are exact fixed points, no cross-talk). hopfield/core.py.")
     p.add_argument("--movement_mode", default="continuous")
@@ -2034,10 +2042,19 @@ def main():
         if cfg.agent.aux_disp_weight <= 0:
             p.error("sup=1 stages need --aux_disp_weight > 0 (the displacement "
                     "head carries the dense goal signal)")
+    idea4 = bool(getattr(cfg.agent, "recurrent_memory_checkpoint", ""))
+    if idea4 and not memory_backend.is_kv(cfg):
+        p.error("--recurrent_memory_checkpoint stands in for sensory_kv's table "
+                "(--memory_backend sensory_kv)")
+    if idea4 and kinds - {"lifetime"}:
+        p.error("--recurrent_memory_checkpoint runs lifetime stages only "
+                "(one memory per lifetime, GRID_MLP_NAV_PLAN §7b.15)")
     if "lifetime" in kinds:
         # Idea 3, stage 2: the recurrent state is the only memory there is.
-        if not memory_backend.is_none(cfg):
-            p.error("lifetime stages are idea 3's (--memory_backend none)")
+        # Idea 4: one recurrent memory bank per lifetime (rollout/lifetime.py).
+        if not (memory_backend.is_none(cfg) or idea4):
+            p.error("lifetime stages are idea 3's (--memory_backend none) or "
+                    "idea 4's (--recurrent_memory_checkpoint)")
         too_many = [st.envs for st in stages
                     if st.kind == "lifetime" and (st.envs or 2) > cfg.envs_per_world]
         if too_many:
@@ -2046,7 +2063,7 @@ def main():
     if memory_backend.is_kv(cfg) or memory_backend.is_none(cfg):
         # Stage 1 of GRID_MLP_NAV_PLAN: the task regime and its evaluator only
         # (and, under 'none', the lifetimes of stage 2).
-        other = sorted(kinds - ({"task", "lifetime"} if memory_backend.is_none(cfg)
+        other = sorted(kinds - ({"task", "lifetime"} if (memory_backend.is_none(cfg) or idea4)
                                 else {"task"}))
         if other:
             p.error(f"--memory_backend {cfg.agent.memory_backend} runs task "

@@ -62,13 +62,26 @@ def run_lifetime(collector, agent, envs, offsets, *, n_envs: int, iters: int,
     fired = [None] * n_envs
     h = h0
     rollouts = []
+    # Idea 4 (GRID_MLP_NAV_PLAN §7b.15): one recurrent memory bank per
+    # lifetime, never reset, read and written through every trial as the
+    # continual protocol's one memory is. Without it (idea 3) there is no
+    # memory and the recurrent state carries everything.
+    ckpt = getattr(collector.cfg.agent, "recurrent_memory_checkpoint", "") or ""
+    if ckpt:
+        from ..memory.recurrent_goal import RecurrentGoalBank
+        mems = RecurrentGoalBank(ckpt, B, device=collector.device,
+                                 arena_size=collector.cfg.env.size,
+                                 c_scale=collector.cfg.agent.recurrent_c_scale)
+    else:
+        mems = None
     for j in order:
         env = envs[j]
         was_active = getattr(env, "goals_active", True)
         env.goals_active = True
         try:
             r = collector.collect_rollout(
-                env, agent, [None] * B, allow_store=True, h_rnn=h,
+                env, agent, mems if mems is not None else [None] * B,
+                allow_store=True, h_rnn=h,
                 env_offset=offsets[j], update_idx=update_idx,
                 epsilon_now=epsilon, goal_in_memory_init=False,
                 ends_on_goal=True, task_mode=True, store_fired_init=fired[j],

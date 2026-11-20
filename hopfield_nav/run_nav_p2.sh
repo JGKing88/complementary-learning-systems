@@ -2025,6 +2025,12 @@ case "$VARIANT" in
                   ENVS_PER_WORLD=6; BATCH_ENVS=${FIX_BATCH_ENVS:-64}; ENV_REPEATS=1
                   LOAD_CKPT=${I3_STAGE1:-}
                   _rest="${_rest#_life}" ;;
+            _i4*) # Idea 4 (GRID_MLP_NAV_PLAN §7b.15): with _gmlp, a trained
+                  # recurrent memory (frozen) in place of idea 1's table, one
+                  # per lifetime; with _life. I4_MEMORY = its memory.pt.
+                  RECURRENT_MEMORY_CHECKPOINT=${I4_MEMORY:?set I4_MEMORY to an idea 4 memory.pt}
+                  N_TRAIN_DISTRACTORS_MIN=0; N_TRAIN_DISTRACTORS_MAX=0
+                  _rest="${_rest#_i4}" ;;
             _rp*) ENV_GENERATOR=1; REFRESH_PLACE=${REFRESH_PLACE:-1}
                   PLACE_REGION=${PLACE_REGION:-anywhere}; PLACE_MARGIN=${PLACE_MARGIN:-80}
                   REFRESH_GOAL=${REFRESH_GOAL:-1}; REDRAW_GOAL_PER_ROLLOUT=""

@@ -608,7 +608,11 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     # there is no nav= to score, and distractors (memory content) do not exist:
     # one distractor level stands for all.
     no_memory = memory_backend.is_none(cfg)
-    if no_memory:
+    # Idea 4 (GRID_MLP_NAV_PLAN §7b.15): its memory exists only inside a
+    # lifetime (rollout/lifetime.py), so only evaluate_lifetime reads it; the
+    # nav, expl and task evaluators would build idea 1's table instead.
+    idea4 = bool(getattr(cfg.agent, "recurrent_memory_checkpoint", ""))
+    if no_memory or idea4:
         dist = [0]
     expl_only = scope == "expl"
     run_disc = scope == "all"
@@ -622,7 +626,7 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     # (analysis/nav_tri/reeval_series.py --no-deterministic).
     det = bool(getattr(cfg, "eval_deterministic", True))
     t0 = time.time()
-    nav = {} if (expl_only or no_memory) else evaluate_navigation(
+    nav = {} if (expl_only or no_memory or idea4) else evaluate_navigation(
         agent, val_envs, val_vh, val_offsets, cfg, device,
         num_trials=nt, max_steps=max_steps,
         n_distractors_list=dist, deterministic=det)
@@ -630,20 +634,22 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
         agent, val_envs, val_vh, val_offsets, cfg, device,
         num_trials=nt, max_steps=max_steps,
         n_distractors_list=dist) if run_disc else {}
-    expl = evaluate_exploration(agent, val_envs, val_vh, val_offsets, cfg, device,
-                                num_trials=nt, max_steps=max_steps,
-                                n_distractors_list=dist, deterministic=det)
+    expl = {} if idea4 else evaluate_exploration(
+        agent, val_envs, val_vh, val_offsets, cfg, device,
+        num_trials=nt, max_steps=max_steps,
+        n_distractors_list=dist, deterministic=det)
     # evaluate_task runs the training collector, which always SAMPLES: the
     # task= rows have been sampled in every run; only nav= and expl= follow
     # `det`.
     task = evaluate_task(agent, val_envs, val_vh, val_offsets, cfg, device,
                          num_trials=nt, max_steps=max_steps,
-                         n_distractors_list=dist) if run_task else {}
+                         n_distractors_list=dist) if (run_task and not idea4) else {}
     # Idea 3: the continual protocol in small (3 arenas, 2 passes per block),
     # the state carried through, so every eval point reports retention.
+    # Idea 4: the same, its memory carried through.
     life = evaluate_lifetime(agent, val_envs, val_vh, val_offsets, cfg, device,
                              num_trials=nt, max_steps=max_steps) \
-        if (run_task and no_memory) else {}
+        if (run_task and (no_memory or idea4)) else {}
     eval_s = time.time() - t0
     if not expl_only and not no_memory:
         print(f"  [{update_tag}] nav={nav}")
@@ -668,7 +674,7 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
             for k, v in nav.get(n_d, {}).items(): log[f"eval/nav_{n_d}/{k}"] = v
             for k, v in disc.get(n_d, {}).items(): log[f"eval/disc_{n_d}/{k}"] = v
             # union_coverage / redundancy now arrive inside expl.
-            for k, v in expl[n_d].items(): log[f"eval/expl_{n_d}/{k}"] = v
+            for k, v in expl.get(n_d, {}).items(): log[f"eval/expl_{n_d}/{k}"] = v
             for k, v in task.get(n_d, {}).items():
                 if v == v:
                     log[f"eval/task_{n_d}/{k}"] = v
