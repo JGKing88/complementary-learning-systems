@@ -100,7 +100,12 @@ def matched_thresh(sums, target: float) -> float:
     for _ in range(80):
         mid = 0.5 * (lo + hi)
         lo, hi = (mid, hi) if active_fraction(sums, mid) > target else (lo, mid)
-    return 0.5 * (lo + hi)
+    th = 0.5 * (lo + hi)
+    # Pruning zeroes ~40% of the one-hot weights, so ~6% of (cell, place) pairs have input exactly
+    # 0. A target inside that atom (f = 50%) cannot be met: the bisection ends a hair to one side of
+    # 0, and just below it would count those pairs as active at a rate of 1e-12. Use 0 itself; the
+    # fraction actually active is recorded as active_exact.
+    return 0.0 if abs(th) < 1e-6 else th
 
 
 def smoothed_wpg(Wpg: np.ndarray, lambdas, fwhm: float) -> np.ndarray:
