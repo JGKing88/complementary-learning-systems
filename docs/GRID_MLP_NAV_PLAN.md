@@ -2130,6 +2130,53 @@ So far the protocol-trained memory holds about 3 goals through the
 would need. The agent backend (stage 3) waits until the memory holds
 every arena at 0.8 or better.
 
+Stage 2 later (2026-11-20). Both runs reached 6 arenas: `ft` at update
+26,261, `scratch` at 31,527. At the protocol's 40 iterations the last
+block held 3.0 to 3.8 goals for `ft` (updates 26k to 44k) and climbed to
+4.3 for `scratch` (1.4 at 12k, 4.0 to 4.3 at 34k to 38k). The two store
+differently: `ft` keeps the first goals and the newest and loses arena 3
+at every test (0.02 to 0.21); `scratch` holds all arenas about equally
+(0.55 to 0.86 at 38k).
+
+Stage 3, zero-shot (2026-11-20). Idea 1's trained controller
+(`navigate_navp2_task3r_k2_h128_gmlp_s42_24342872/navigate_u3800.pt`) with
+idea 4's memory in place of its table, no new training
+(`hopfield_nav/memory/recurrent_goal.py`, `agenthash.py --recurrent_memory`,
+`hopfield_nav/run_idea4_agent_cl.sh`; commits 4ebe8ea to cefe626). The
+memory steps once per agent step on the live view, the agent's own grid
+phases and the oracle store flag; its goal phases are decoded to the best
+cell of the arena and passed through the frozen grid MLP for d, and c is
+half its sigmoid (a held goal near idea 1's own-goal level of 0.5). The
+continual protocol scored as §10.8 (6 recorded envs, 40 iterations, 200-step
+cap, seed 3000, one oracle store per env, sampled):
+
+| memory | first visit reached | revisit reached | revisit steps |
+|---|---|---|---|
+| idea 1 table (§10.8) | 0.968 | 1.000 (2400 of 2400) | 12.85 |
+| idea 4 `ft`, update 39k | 0.73 | 0.38 | 64.1 |
+| idea 4 `scratch`, update 34.5k | 0.53 | 5 of 6 envs never stored | |
+
+Why. The wiring is right: `obs_at` gives exactly the training views (max
+difference 0 over 200), and through the agent's input path on scripted
+paths the `scratch` memory decodes 1.000 with one arena. Logged along the
+agent's own trajectories, the memory fails: `ft` decodes 0.95 with one
+arena, then 0.36 to 0.42 in block 1 and about 0 later; `scratch` decodes
+0.001 even with one arena, and reports a goal before any store (c 0.41,
+then about 0.9). The agent moves continuously and is snapped to cells: 25
+to 28% of its steps change the cell diagonally and 7 to 10% leave it
+unchanged, while the memory was trained on one-cell axis moves. Repeating
+the read while the cell is unchanged (`--recurrent_skip_stays`) does not
+help (revisit 0.33). Offline with agent-like movement
+(`analysis/idea4/motion.py`, `persist.py --motion continuous`) the
+`scratch` memory falls from 4.3 goals to about 1.4 (0.7 with detours) and
+its c before an arrival reaches 0.95; `ft` holds 3.4 goals (2.5 with
+detours) but its c before an arrival rises to 0.46.
+
+In progress: both memories fine-tuned on agent-like movement
+(`train_protocol.py --motion continuous`, from `ft` at update 43.5k and
+`scratch` at 39k, strict curriculum from 2 arenas, 30k updates; outputs
+`protocol_h2048_motion_{ft,scratch}_s0`), then the zero-shot agent again.
+
 ## 8. Decisions and open items
 
 | | |
