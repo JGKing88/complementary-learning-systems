@@ -136,6 +136,65 @@ fields are under 9 cells at every f.
   rises monotonically with f, since the 20% line cuts the joined regions of dense codes back into
   separate peaks.
 
-### Hopfield probe
+### Hopfield probe (2026-11-19, all 65 runs)
 
-Pending (65 runs launched 2026-11-19).
+**With the one inhibition constant, the memory measures depend mainly on the number of active units
+per place, f x D.** About 50 active units give exact retrieval near 0.9 and a 6° direction error;
+about 100 give exact retrieval near 1 and 4.5°; more keep improving direction. Codes with the same
+f x D land close together whatever f is. Direction error at K = 5 with inhibition:
+
+| f x D (active units per place) | 51 | 82 to 102 | 205 | 410 |
+|---|---|---|---|---|
+| codes | 5% of 1024, 10% of 512, 20% of 256 | 2% of 4096, 5% of 2048, 10% of 1024, 20% of 512, 35% of 256 | 5% of 4096, 10% of 2048, 20% of 1024 | 10% of 4096, 20% of 2048 |
+| direction error | 6.4, 6.0, 6.4 | 4.9, 4.9, 4.8, 4.3, 4.4 | 3.7, 3.4, 3.0 | 2.9, 2.5 |
+| exact retrieval | 0.90, 0.95, 0.85 | 0.98, 1.00, 1.00, 1.00, 0.99 | 1.00, 1.00, 1.00 | 1.00, 1.00 |
+
+K = 5, with inhibition (the signed ideal of the same D in the first row):
+
+| | err 256 | 512 | 1024 | 2048 | 4096 | exact 256 | 512 | 1024 | 2048 | 4096 | basin 256 | 512 | 1024 | 2048 | 4096 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ideal, signed | 1.8 | 1.6 | 1.0 | 0.9 | 0.9 | 0.99 | 1.00 | 1.00 | 1.00 | 1.00 | 18.8 | 25.8 | 32.1 | 34.8 | 38.3 |
+| 2% | 43.5 | 24.2 | 12.8 | 7.6 | 4.9 | 0.06 | 0.20 | 0.41 | 0.82 | 0.98 | -0.8 | -0.2 | 3.4 | 9.3 | 30.8 |
+| 5% | 15.6 | 9.8 | 6.4 | 4.9 | 3.7 | 0.22 | 0.50 | 0.90 | 1.00 | 1.00 | -0.2 | 3.3 | 14.2 | 35.2 | 41.4 |
+| 10% | 11.1 | 6.0 | 4.8 | 3.4 | 2.9 | 0.48 | 0.95 | 1.00 | 1.00 | 1.00 | 4.4 | 13.2 | 28.7 | 38.2 | 42.2 |
+| 20% | 6.4 | 4.3 | 3.0 | 2.5 | 2.2 | 0.85 | 1.00 | 1.00 | 1.00 | 1.00 | 12.6 | 21.6 | 32.1 | 38.5 | 42.1 |
+| 35% | 4.4 | 3.5 | 2.6 | 2.1 | 1.8 | 0.99 | 1.00 | 1.00 | 1.00 | 1.00 | 17.4 | 26.2 | 32.7 | 37.9 | 42.1 |
+| 50% | 3.4 | 3.0 | 2.1 | 1.8 | 1.6 | 0.98 | 1.00 | 1.00 | 1.00 | 1.00 | 17.9 | 25.3 | 31.4 | 37.2 | 40.2 |
+
+K = 20, with inhibition:
+
+| | err 256 | 512 | 1024 | 2048 | 4096 | exact 256 | 512 | 1024 | 2048 | 4096 | basin 256 | 512 | 1024 | 2048 | 4096 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ideal, signed | 3.2 | 2.0 | 1.3 | 1.1 | 0.9 | 0.67 | 0.98 | 1.00 | 1.00 | 1.00 | 7.1 | 16.4 | 22.1 | 29.3 | 32.8 |
+| 2% | 44.3 | 24.3 | 12.9 | 7.6 | 4.9 | 0.06 | 0.20 | 0.43 | 0.82 | 0.98 | -0.8 | -0.2 | 3.3 | 9.6 | 29.8 |
+| 5% | 16.3 | 10.0 | 6.4 | 4.9 | 3.7 | 0.17 | 0.47 | 0.88 | 1.00 | 1.00 | -0.3 | 3.2 | 11.6 | 27.9 | 34.0 |
+| 10% | 11.2 | 6.1 | 4.9 | 3.5 | 2.9 | 0.43 | 0.90 | 1.00 | 1.00 | 1.00 | 3.9 | 10.0 | 23.4 | 31.8 | 37.1 |
+| 20% | 6.7 | 4.4 | 3.1 | 2.6 | 2.2 | 0.72 | 0.96 | 1.00 | 1.00 | 1.00 | 7.4 | 16.1 | 23.5 | 32.9 | 37.1 |
+| 35% | 5.1 | 3.9 | 2.8 | 2.2 | 1.9 | 0.73 | 0.99 | 1.00 | 1.00 | 1.00 | 4.9 | 17.6 | 25.8 | 32.1 | 36.6 |
+| 50% | 4.3 | 3.3 | 2.3 | 1.9 | 1.6 | 0.78 | 0.95 | 1.00 | 1.00 | 1.00 | 5.9 | 16.4 | 23.9 | 31.1 | 35.4 |
+
+Dead goals with inhibition, at K = 5 and at K = 20 alike, are 0 for every code with 40 or more
+active units per place. The others: 2% of 256, 512 and 1024 units have 79%, 50 to 54% and 17%; 5%
+of 256 and 512 have 25% and 12%; 10% of 256 has 8%. Reach is 0.98 to 1.00 wherever f x D is 80 or
+more.
+
+* **Rectified codes reach the ideal's retrieval and, at 4096 units, pass its basin; they keep a
+  direction cost.** With inhibition and f x D of 80 or more, exact retrieval at K = 5 is 0.98 to
+  1.00 like the ideal's (at K = 20 the 256-unit codes drop to 0.72 to 0.78, as the 256-unit ideal
+  drops to 0.67), and the K = 5 basin is within 20% of the ideal's at the same D. At 2048 and 4096
+  units the K = 5 basin is larger than the ideal's for every f from 5% up (4096 units: 40 to 42 cells
+  against 38.3); at K = 20 and 4096 units it is 34 to 37 against 32.8. Direction error stays above
+  the ideal's: 1.6 to 3.7° at 4096 units for f from 5% up, against 0.9°.
+* **Inhibition is what lets dense codes work, and it matters little below 10%.** Without it, 35%
+  and 50% codes crowd: at K = 20 their direction error is 12 to 31°, exact retrieval 0.03 to 0.54 and
+  dead goals 62 to 96% at every D, while the same codes with inhibition have 1.6 to 5.1°, 0.73 to
+  1.00 and none dead. Their similarity floor without inhibition is 0.22 (35%) and 0.32 (50%). At 2%
+  and 5% (floor 0.01 and 0.03) inhibition changes little.
+* **Without inhibition the best sparsity is 10 to 20%.** It is the trade-off between too few active
+  units (2 to 5%) and the floor (35 to 50%): at K = 5 and 1024 units, exact retrieval is 0.41, 0.90,
+  1.00, 0.98, 0.84 and 0.57 from 2% to 50%.
+* **15 recall steps.** With inhibition, acc45 after 15 steps is 0.97 to 1.00 for f x D of 80 or
+  more. Without it, the 35% and 50% codes fall to 0.94 to 0.98 at 1024 units and above (K = 5).
+
+All 11 measures at every K are in `grid_results.json`, on the page, and printed by
+`python -m analysis.rect_ideal.summary`.
