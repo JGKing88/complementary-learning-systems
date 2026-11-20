@@ -32,11 +32,15 @@ import subprocess
 import numpy as np
 
 from analysis.hopfield_probe.ideal_encoder import IdealEncoder, parse_ideal_spec
-from analysis.rect_ideal.codes import DS, FS, VARIANTS, f_tag, field_tasks, npos
+from analysis.rect_ideal.codes import DS, FS, VARIANTS, f_tag, field_tasks, matched_r, npos
 from cls_paths import results_dir
 
 REF = {"x0": 1708, "y0": 1710, "S": 16}
 N_CHECK = 16
+# The page's threshold slider: share of units active, 1% to 60% in 0.5% steps (the six computed
+# sparsities are on it).
+F_GRID = [round(0.01 + 0.005 * i, 4) for i in range(119)]
+N_GAUSS = max(DS) // 2        # draws for the largest n_freq; smaller codes use a prefix
 LABELS = {"m111213": "11, 12, 13 (r = 16)", "m111523_r16": "11, 15, 23, r = 16",
           "m111523_rs": "11, 15, 23, r scaled (20.8)"}
 
@@ -70,7 +74,10 @@ def export_codes(variant: str, out: str, sha: str) -> None:
     v = VARIANTS[variant]
     man = {"variant": variant, "label": LABELS[variant], "npos": N, "lambdas": list(v["lambdas"]),
            "lambda_ref": v["lambda_ref"], "r_ideal": v["r_ideal"], "Fs": list(FS), "Ds": list(DS),
-           "ref_arena": REF, "n_check": N_CHECK, "codes": codes, "signs": signs, "git_sha": sha}
+           "ref_arena": REF, "n_check": N_CHECK, "codes": codes, "signs": signs, "git_sha": sha,
+           # r matched at every slider position, rounded as the codes' specs round it, so the page
+           # rebuilds the six computed codes exactly (draw_frequencies from rect_gauss.b64.txt).
+           "r_table": {"f": F_GRID, "r": [round(matched_r(f, variant), 4) for f in F_GRID]}}
     with open(os.path.join(out, f"rect_manifest_{variant}.json"), "w") as fh:
         json.dump(man, fh, separators=(",", ":"))
 
@@ -86,6 +93,11 @@ def main(argv=None) -> int:
     variants = args.variant or list(VARIANTS)
     sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True,
                          text=True, cwd=here).stdout.strip()
+    # draw_frequencies(r, n, seed=0) is rint(sigma * g) with g these standard normals (legacy
+    # RandomState.normal is loc + scale * gauss), reduced into (-Npos/2, Npos/2].
+    g = np.random.RandomState(0).normal(0.0, 1.0, size=(N_GAUSS, 2))
+    with open(os.path.join(args.out, "rect_gauss.b64.txt"), "w") as fh:
+        fh.write(base64.b64encode(np.ascontiguousarray(g, dtype="<f8").tobytes()).decode())
     index = []
     for variant in VARIANTS:
         if variant in variants and not args.results_only:

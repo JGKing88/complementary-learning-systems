@@ -316,6 +316,16 @@ def run_fields(variant: str, out_dir: str, rows: int, workers: int) -> None:
         json.dump(summary, fh)
 
 
+F_GRID = [round(0.01 + 0.005 * i, 4) for i in range(119)]     # the page's slider, 1% to 60%
+
+
+def thresh_table(sums) -> dict:
+    """The exact threshold at every slider position, and the share it actually activates (the
+    one-hot layer cannot reach 47% to 53%: the zero-input atom)."""
+    th = [matched_thresh(sums, f) for f in F_GRID]
+    return {"f": F_GRID, "theta": th, "active": [active_fraction(sums, t) for t in th]}
+
+
 def export(out: str) -> None:
     """Page data for every variant: weights, thresholds, Python check values and the results."""
     os.makedirs(out, exist_ok=True)
@@ -342,7 +352,8 @@ def export(out: str) -> None:
         man = {"variant": variant, "modules": v["modules"], "input": v["input"], "fwhm": FWHM,
                "label": v["label"], "lambdas": list(lam), "npos": N,
                "lambda_ref": v["lambda_ref"], "Np": NP, "Ng": int(W.shape[1]), "c": C, "seed": SEED,
-               "Fs": list(FS), "codes": codes, "check_units": units.tolist(), "ref_arena": REF}
+               "Fs": list(FS), "codes": codes, "check_units": units.tolist(), "ref_arena": REF,
+               "thresh_table": thresh_table(sums)}
         with open(os.path.join(out, f"hpc_manifest_{variant}.json"), "w") as fh:
             json.dump(man, fh, indent=1)
         res = results_root() / f"hpc_results_{variant}.json"

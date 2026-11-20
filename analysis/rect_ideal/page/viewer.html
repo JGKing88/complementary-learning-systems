@@ -172,20 +172,31 @@ table.heat .cell.na { background: var(--surface-2); color: var(--muted); }
         <div class="seg" id="pops"></div>
         <div class="rectsel" id="rect-row" hidden>
           <div class="row"><label for="rect-v">Modules</label><select id="rect-v" class="grow"></select></div>
-          <div class="row"><label for="rect-f">Active</label><select id="rect-f" class="grow"></select></div>
           <div class="row"><label for="rect-D">Units</label><select id="rect-D" class="grow"></select></div>
+          <div class="row"><label for="rect-r">Kernel r</label><select id="rect-r" class="grow"></select></div>
         </div>
-        <p class="hint" id="rect-hint" hidden>Each code is the ideal code with half as many waves as units, rotated by a fixed Walsh-Hadamard matrix, thresholded so this share of units is active at every place, and scaled to unit length. The kernel radius r grows as the code gets sparser, so that the population kernel, after one inhibition constant is removed, is as wide as the unrectified ideal's. The ideal code depends on the grid modules only through the scaffold size: 11 × 12 × 13 = 1716 cells, 11 × 15 × 23 = 3795. On the larger scaffold the arena's coordinates are read on it, and the map above shows its first 1716 cells. "r scaled" widens the kernel by the modules' geometric-mean period (15.6 cells against 12.0). 4096-unit codes take a few seconds per arena; use a smaller arena to drag smoothly.</p>
+        <p class="hint" id="rect-hint" hidden>Each code is the ideal code with half as many waves as units, rotated by a fixed Walsh-Hadamard matrix, thresholded so the slider's share of units is active at every place, and scaled to unit length. Rectifying narrows the population kernel, more so when sparser, so the kernel radius r that keeps it as wide as the unrectified ideal's (after one inhibition constant is removed) depends on the share. "Matched to the slider" redraws the code at that r for every slider position (the same random draw, rescaled), which recomputes the maps; "fixed" keeps one code's r and only moves the threshold, which is instant. The ideal code depends on the grid modules only through the scaffold size: 11 × 12 × 13 = 1716 cells, 11 × 15 × 23 = 3795. On the larger scaffold the arena's coordinates are read on it, and the map above shows its first 1716 cells. "r scaled" widens the kernel by the modules' geometric-mean period (15.6 cells against 12.0). 4096-unit codes take a few seconds per arena; use a smaller arena to drag smoothly.</p>
         <div class="rectsel" id="vhpc-row" hidden>
           <div class="row"><label for="vhpc-v">Modules</label><select id="vhpc-v" class="grow"></select></div>
-          <div class="row"><label for="vhpc-f">Active</label><select id="vhpc-f" class="grow"></select></div>
         </div>
-        <p class="hint" id="vhpc-hint" hidden>Vector-HaSH's place layer, relu(Wpg g − θ), on the one-hot grid code (Hippocampus) or on the smoothed grid code the encoder reads (smoothed input, folded into the weights): 400 cells, Wpg Gaussian with about half the entries pruned (seed 0), drawn as build_scaffold draws it. Each module set has its own Wpg (434 grid inputs for 11, 12, 13; 875 for 11, 15, 23). One threshold θ per sparsity makes that share of all (cell, place) pairs active over the whole scaffold, exactly, so cells differ in how much they fire.</p>
+        <p class="hint" id="vhpc-hint" hidden>Vector-HaSH's place layer, relu(Wpg g − θ), on the one-hot grid code (Hippocampus) or on the smoothed grid code the encoder reads (smoothed input, folded into the weights): 400 cells, Wpg Gaussian with about half the entries pruned (seed 0), drawn as build_scaffold draws it. Each module set has its own Wpg (434 grid inputs for 11, 12, 13; 875 for 11, 15, 23). θ is the one threshold that makes the slider's share of cells active, on average over the whole scaffold (exact), so cells differ in how much they fire.</p>
         <div class="row" id="band-row" hidden>
           <label for="band">Remove slow waves</label>
           <select id="band" class="grow"></select>
         </div>
         <p class="hint" id="band-hint" hidden>Waves with |n| below the cutoff are dropped and replaced by faster draws from the same Gaussian, so there are always 512. |n| counts cycles across the 1716-cell scaffold, so a cutoff c removes every wavelength longer than 1716 / c cells. These are the probe's draws (ideal encoder option nmin). The check against Python uses the full draw.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-thr">
+        <div class="ptitle" id="t-thr">Threshold</div>
+        <div class="row">
+          <label for="thr">Cells active</label>
+          <input type="range" class="grow" id="thr" min="1" max="60" step="0.5" value="10">
+          <span class="out" id="thr-out">10%</span>
+        </div>
+        <div class="row"><input type="checkbox" id="thr-others" checked><label for="thr-others">Also threshold populations without their own</label></div>
+        <p class="hint" id="thr-hint"></p>
+        <p class="hint">One threshold for the whole layer, set so this share of cells is active. The rectified ideal and the hippocampus populations apply it as their own threshold. The others get relu(y − θ) after the fact, with θ the value their outputs exceed this share of the time over 2048 sample places. The grid results below exist only at 2, 5, 10, 20, 35 and 50%; they mark the one nearest the slider.</p>
       </section>
 
       <section class="panel" aria-labelledby="t-arena">
@@ -363,7 +374,10 @@ let NPOS = 1716;
 
 const st = {
   M: null, pops: {}, mlp: {}, popKey: "rect",
-  RM: null, RR: null, RX: null, rect: { f: 0.1, D: 1024 },
+  // thr.f: the slider's share of active cells. rect.f is the computed sparsity the rectified code is
+  // read at (its statistics, and its r when rect.match is off); vhpc.f likewise for the hippocampus.
+  thr: { f: 0.1, others: true }, RG: null,
+  RM: null, RR: null, RX: null, rect: { f: 0.1, D: 1024, match: true },
   rectVar: "m111213", RV: [], rectVars: {}, rectChecks: {},
   vhpc: { v: "m111213", f: 0.1 }, HV: [], hpcVars: {}, hpcChecks: {},
   res: { pop: "rect", measure: "err", K: "5", inh: true, hist: "fields", hover: -1 },
@@ -455,10 +469,10 @@ function unpackMlp(meta, all) {
 }
 
 async function loadAll() {
-  const [M, RV, HV] = await Promise.all([
+  const [M, RV, HV, RG] = await Promise.all([
     fetchText("manifest.json").then(JSON.parse), fetchText("rect_variants.json").then(JSON.parse),
-    fetchText("hpc_variants.json").then(JSON.parse)]);
-  st.M = M; NPOS = M.npos; st.RV = RV; st.HV = HV;
+    fetchText("hpc_variants.json").then(JSON.parse), fetchText("rect_gauss.b64.txt")]);
+  st.M = M; NPOS = M.npos; st.RV = RV; st.HV = HV; st.RG = f64(RG);
   useRectVariant(await loadRectVariant(st.rectVar));
   await Promise.all(HV.map(v => loadHpcVariant(v.key)));
   for (const k of HPC_POPS) st.pops[k] = makeHpcPop(k);
@@ -638,6 +652,27 @@ function idealRotMapsCore(units, a, R, alloc, box) {
   for (let q = 0; q < units.length; q++) { const col = idx[q], base = q * WW; for (let b = 0; b < WW; b++) out[base + b] = src.data[b * K + col]; }
   return { data: out, W: src.W, f: src.f };
 }
+// The rectified code relu(Q z - t) / |.| for the requested units. While every unit of the arena fits
+// (and no block averaging), Q z is kept per arena and radius in box.pre under R.key, so a new t costs
+// one pass over the cached values: each cell's norm over all units at that t, then the requested
+// units. Otherwise the code is computed directly at R.thresh, as for the sparse populations.
+function rectMapsCore(units, a, R, alloc, box) {
+  const D = R.F.length, pl = poolPlan(a.S), WW = pl.W * pl.W;
+  if (pl.f === 1 && WW * D <= ROT_CACHE_FLOATS) {
+    if (!box.pre || box.pre.key !== R.key)
+      box.pre = Object.assign(idealRotCompute(a, null, { npos: R.npos, F: R.F, amp: R.amp, signs: R.signs }), { key: R.key });
+    const src = box.pre.data, K = box.pre.K, t = R.thresh, n = units.length, out = alloc(n * WW);
+    for (let b = 0; b < WW; b++) {
+      const o = b * K;
+      let ss = 0;
+      for (let i = 0; i < K; i++) { const y = src[o + i] - t; if (y > 0) ss += y * y; }
+      const sc = ss > 0 ? 1 / Math.sqrt(ss) : 0;
+      for (let q = 0; q < n; q++) { const y = src[o + units[q]] - t; out[q * WW + b] = y > 0 ? y * sc : 0; }
+    }
+    return { data: out, W: pl.W, f: pl.f };
+  }
+  return idealRotMapsCore(units, a, R, alloc, { cache: null });
+}
 // The background thread's message loop. Output buffers come back from the page after use and are reused.
 function workerMain() {
   let wpgs = null, signs = null, placeQ = null;
@@ -663,6 +698,7 @@ function workerMain() {
       else if (m.type === "ideal") res = idealMapsCore(m.units, m.a, m.args, take);
       else if (m.type === "hpc") res = hpcMapsCore(m.units, m.a, Object.assign({ Wpg: wpgs[m.args.key] }, m.args), take);
       else if (m.type === "ideal_rot") res = idealRotMapsCore(m.units, m.a, Object.assign({ signs }, m.args), take, box);
+      else if (m.type === "rect") res = rectMapsCore(m.units, m.a, m.args, take, box);
       else if (m.type === "ideal_place") res = placeMapsCore(m.units, m.a, Object.assign({ Q: placeQ }, m.args), take);
       else throw new Error("unknown job " + m.type);
       self.postMessage({ id: m.id, res }, [res.data.buffer]);
@@ -692,7 +728,7 @@ function callWorker(type, msg, transfer) {
 async function startWorker() {
   try {
     const fns = [mod, poolPlan, finishPool, trigTables, gridMapsCore, idealMapsCore, placeMapsCore, hpcMapsCore,
-                 fwhtInPlace, idealRotCompute, idealRotMapsCore, workerMain];
+                 fwhtInPlace, idealRotCompute, idealRotMapsCore, rectMapsCore, workerMain];
     const src = "\"use strict\";\nconst MAX_RES = " + MAX_RES + ";\nconst ROT_CACHE_FLOATS = " + ROT_CACHE_FLOATS + ";\n" +
       fns.map(f => f.toString()).join("\n\n") + "\nworkerMain();\n";
     const w = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
@@ -831,6 +867,98 @@ function makeIdealSparse(key, meta, signs) {
 // for a share f of active units. Same transform as the sparse populations above (idealRotCompute
 // with R.thresh); the signs travel with each job because they depend on D.
 function rectKey(f = st.rect.f, D = st.rect.D) { return "f" + String(Math.round(100 * f)).padStart(2, "0") + "_D" + D; }
+
+// ---- the threshold slider
+// Populations that apply the slider as their own threshold; every other one gets relu(y - theta).
+const OWN_THRESH = ["rect", "hippocampus", "hippocampus_smooth"];
+const COMPUTED_F = [0.02, 0.05, 0.1, 0.2, 0.35, 0.5];
+const nearestF = f => COMPUTED_F.reduce((b, x) => Math.abs(x - f) < Math.abs(b - f) - 1e-12 ? x : b, COMPUTED_F[0]);
+// The slider moves in 0.5% steps from 1%, the grid of the exported tables (r_table, thresh_table).
+function tableIndex(T, f) { return Math.max(0, Math.min(T.f.length - 1, Math.round((f - T.f[0]) / (T.f[1] - T.f[0])))); }
+const rTable = (RM, f) => RM.r_table.r[tableIndex(RM.r_table, f)];
+function hpcTheta(HM, f) { const T = HM.thresh_table, i = tableIndex(T, f); return { theta: T.theta[i], active: T.active[i] }; }
+// Inverse standard normal CDF (Acklam; relative error below 1.2e-9), for t = Phi^-1(1 - f) / sqrt(D).
+function probit(p) {
+  const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+  const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01];
+  const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+  const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00];
+  const lo = 0.02425;
+  if (p < lo) { const q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+  if (p > 1 - lo) { const q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+  const q = p - 0.5, r = q * q;
+  return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+}
+// numpy's rint: round half to even.
+function rintEven(x) { const f = Math.floor(x), d = x - f; return d < 0.5 ? f : d > 0.5 ? f + 1 : (f % 2 === 0 ? f : f + 1); }
+// ideal_encoder.draw_frequencies(r, nf, seed 0, npos): rint(sigma * g) with g the exported seed-0
+// standard normals (legacy RandomState.normal is loc + scale * gauss), reduced into (-npos/2, npos/2].
+function rectFreqs(RM, nf, r) {
+  const g = st.RG, N = RM.npos, sigma = N / (2 * Math.PI * r), half = Math.floor(N / 2), F = new Int32Array(2 * nf);
+  for (let i = 0; i < 2 * nf; i++) F[i] = mod(rintEven(sigma * g[i]) + half - 1, N) - (half - 1);
+  return F;
+}
+// What the rectified population shows now: the slider's share, at the matched r or the code's own.
+function rectNow(RM, c) {
+  const f = st.thr.f, r = st.rect.match ? rTable(RM, f) : c.r;
+  return { f, r, t: probit(1 - f) / Math.sqrt(c.D) };
+}
+// Other populations: theta is the value their outputs exceed a share f of the time, over every unit
+// at 2048 sample places (two 32 x 32 patches), computed once per population.
+const SAMPLE_ARENAS = [{ x0: 101, y0: 977, S: 32 }, { x0: 1311, y0: 433, S: 32 }];
+async function popSample(pop) {
+  const units = Array.from({ length: pop.n }, (_, i) => i), parts = [];
+  for (const a of SAMPLE_ARENAS) { const res = await pop.maps(units, a); parts.push(Float32Array.from(res.data)); recycle(res); }
+  const all = new Float32Array(parts.reduce((s, p) => s + p.length, 0));
+  let o = 0;
+  for (const p of parts) { all.set(p, o); o += p.length; }
+  return all.sort();
+}
+function genericCut(pop) {
+  if (!pop || OWN_THRESH.includes(pop.key) || !st.thr.others || !pop._sample) return null;
+  const s = pop._sample;
+  return s[Math.max(0, Math.min(s.length - 1, Math.floor((1 - st.thr.f) * s.length)))];
+}
+// Starts the sample for a population that needs one; renders again when it is ready.
+function ensureSample(pop) {
+  if (!pop || OWN_THRESH.includes(pop.key) || !st.thr.others || pop._sample || pop._sampling) return;
+  if (MLP_KEYS.includes(pop.key) && !st.engine) return;
+  pop._sampling = popSample(pop).then(s => { pop._sample = s; pop._sampling = null; updateSortNote(); requestRender(); })
+    .catch(e => { pop._sampling = null; pop._sampleErr = errText(e); renderThrHint(); });
+}
+function renderThrHint() {
+  const pop = st.pops[st.popKey], f = st.thr.f, pct = x => (100 * x).toFixed(1) + "%";
+  $("thr-out").textContent = (100 * f).toFixed(1).replace(/\.0$/, "") + "%";
+  let txt = "";
+  if (!pop) txt = "";
+  else if (pop.key === "rect") {
+    const c = pop.code(), now = rectNow(st.RM, c);
+    txt = "Rectified ideal: t = " + now.t.toFixed(5) + " on Q z, r = " + now.r.toFixed(2) + " cells (" +
+      (st.rect.match ? "matched to " + pct(f) : "fixed: matched for " + pct(c.f)) + ").";
+  } else if (HPC_POPS.includes(pop.key)) {
+    const { V } = pop.code(), h = hpcTheta(V.HM, f);
+    txt = pop.meta.label + ": θ = " + h.theta.toFixed(3) + ", " + pct(h.active) + " of cells active on average over the scaffold" +
+      (Math.abs(h.active - f) > 0.0015 ? " (the nearest this layer reaches: about 6% of cell-place inputs are exactly 0)" : "") + ".";
+  } else if (!st.thr.others) txt = pop.meta.label + ": not thresholded (raw output).";
+  else if (pop._sample) txt = pop.meta.label + ": relu(y − θ), θ = " + fmtVal(genericCut(pop)) + ".";
+  else if (pop._sampleErr) txt = pop.meta.label + ": could not sample its outputs (" + pop._sampleErr + "), so it is shown unthresholded.";
+  else txt = pop.meta.label + ": finding θ from 2048 sample places…";
+  $("thr-hint").textContent = txt;
+}
+// The slider moved: the rectified code's reference sparsity follows when r is matched, the
+// hippocampus statistics follow, and the maps redraw (live while dragging).
+function setThrF(f) {
+  st.thr.f = f;
+  $("thr").value = String(Math.round(1000 * f) / 10);
+  if (st.rect.match) st.rect.f = nearestF(f);
+  st.vhpc.f = nearestF(f);
+  if (st.pops.rect) st.pops.rect.refresh();
+  for (const k of HPC_POPS) if (st.pops[k]) st.pops[k].refresh();
+  renderThrHint();
+  updateSortNote();
+  requestRender();
+  renderResults();
+}
 // One grid-module variant (rect_variants.json): its codes, results and population, loaded once.
 async function loadRectVariant(key) {
   if (!st.rectVars[key]) {
@@ -854,24 +982,28 @@ function makeRect(RM) {
     get n() { return cur().D; },
     code: cur,
     refresh() {
-      const c = cur();
-      meta.description = Math.round(100 * c.f) + "% of " + c.D + " units active at each place: relu(Q z − t) scaled to unit length, " +
-        "with z the ideal code of " + c.n_freq + " waves at kernel radius r = " + c.r.toFixed(1) + " cells and Q the fixed " +
+      const c = cur(), now = rectNow(RM, c);
+      meta.description = (100 * now.f).toFixed(1).replace(/\.0$/, "") + "% of " + c.D + " units active at each place: relu(Q z − t) scaled to unit length, " +
+        "with z the ideal code of " + c.n_freq + " waves at kernel radius r = " + now.r.toFixed(2) + " cells (" +
+        (st.rect.match ? "matched to this share" : "fixed at the r matched for " + Math.round(100 * c.f) + "%") + ") and Q the fixed " +
         c.D + "-unit Walsh-Hadamard rotation. Grid modules " + modulesText(RM) + ", a " + RM.npos + "-cell scaffold.";
     },
     label(u) { return "unit " + u; },
     info(u) {
-      const c = cur();
-      return [["Output unit", String(u)], ["Code", Math.round(100 * c.f) + "% active, " + c.D + " units"],
-              ["Waves", c.n_freq + ", r = " + c.r.toFixed(2) + " cells"], ["Threshold t", c.thresh.toFixed(5)],
+      const c = cur(), now = rectNow(RM, c);
+      return [["Output unit", String(u)], ["Code", (100 * now.f).toFixed(1).replace(/\.0$/, "") + "% active, " + c.D + " units"],
+              ["Waves", c.n_freq + ", r = " + now.r.toFixed(2) + " cells"], ["Threshold t", now.t.toFixed(5)],
               ["Grid modules", modulesText(RM) + " (scaffold " + RM.npos + " cells)"]];
     },
+    // A code passed in (the checks) is drawn exactly as exported; otherwise the slider sets the
+    // threshold and, with r matched, the radius. The worker keeps Q z for every unit of the arena
+    // per radius, so a threshold change alone only re-thresholds (rectMapsCore).
     maps(units, a, ref, code) {
-      const c = code || cur();
-      if (!flat.has(c.key)) flat.set(c.key, Int32Array.from(c.freqs));
-      const R = { npos: RM.npos, F: flat.get(c.key), amp: c.amp, thresh: c.thresh, signs: signs[c.D],
-                  key: "rect," + RM.variant + "," + c.key + "," + a.x0 + "," + a.y0 + "," + a.S };
-      return jsMaps("ideal_rot", units, a, R, () => idealRotMapsCore(units, a, R, allocMain, box));
+      const c = code || cur(), now = code ? { r: c.r, t: c.thresh } : rectNow(RM, c), rk = c.D + "@" + now.r;
+      if (!flat.has(rk)) flat.set(rk, now.r === c.r ? Int32Array.from(c.freqs) : rectFreqs(RM, c.n_freq, now.r));
+      const R = { npos: RM.npos, F: flat.get(rk), amp: c.amp, thresh: now.t, signs: signs[c.D],
+                  key: "rectpre," + RM.variant + "," + rk + "," + a.x0 + "," + a.y0 + "," + a.S };
+      return jsMaps("rect", units, a, R, () => rectMapsCore(units, a, R, allocMain, box));
     },
   };
   pop.refresh();
@@ -894,11 +1026,11 @@ async function loadHpcVariant(key) {
   }
   return st.hpcVars[key];
 }
-function hpcArgs(V, c) {
+function hpcArgs(V, thresh) {
   const L = V.HM.lambdas, offs = [];
   let o = 0;
   for (const l of L) { offs.push(o); o += l * l; }
-  return { key: "vhpc_" + V.key, npos: V.HM.npos, L, offs, ng: o, thresh: c.thresh };
+  return { key: "vhpc_" + V.key, npos: V.HM.npos, L, offs, ng: o, thresh };
 }
 // The two hippocampus populations share one module set and sparsity (st.vhpc); each reads its own
 // variant, <modules>_onehot or <modules>_smooth.
@@ -914,21 +1046,23 @@ function makeHpcPop(key) {
     key, meta, signed: false, code: cur,
     get n() { return hpcVar(key).HM.Np; },
     refresh() {
-      const { V, c } = cur();
+      const { V } = cur(), h = hpcTheta(V.HM, st.thr.f);
       meta.description = "Vector-HaSH's place layer, relu(Wpg g − θ), on the " +
         (smooth ? "smoothed grid code (bumps of FWHM " + V.HM.fwhm + " of each period, the encoder's input; folded into Ws = Wpg B)" : "one-hot grid code, as the model builds it") +
-        ", modules " + V.HM.lambdas.join(", ") + " (" + V.HM.Ng + " grid inputs, " + V.HM.Np + " cells). θ = " + c.thresh.toFixed(3) + " makes " +
-        (100 * c.active_exact).toFixed(1) + "% of (cell, place) pairs active over the " + V.HM.npos + "-cell scaffold.";
+        ", modules " + V.HM.lambdas.join(", ") + " (" + V.HM.Ng + " grid inputs, " + V.HM.Np + " cells). θ = " + h.theta.toFixed(3) + " makes " +
+        (100 * h.active).toFixed(1) + "% of cells active, on average over the " + V.HM.npos + "-cell scaffold.";
     },
     label(u) { return "cell " + u; },
     info(u) {
-      const { V, c } = cur();
-      return [["Place cell", String(u)], ["Threshold θ", c.thresh.toFixed(4)],
-              ["Active", (100 * c.active_exact).toFixed(2) + "% of all (cell, place) pairs"],
+      const { V } = cur(), h = hpcTheta(V.HM, st.thr.f);
+      return [["Place cell", String(u)], ["Threshold θ", h.theta.toFixed(4)],
+              ["Active", (100 * h.active).toFixed(2) + "% of cells, on average over the scaffold"],
               ["Grid modules", V.HM.lambdas.join(", ") + " (scaffold " + V.HM.npos + " cells)"]];
     },
+    // A code passed in (the checks) uses its exported threshold; otherwise the slider's, from the
+    // exact table.
     async maps(units, a, ref, sel) {
-      const { V, c } = sel || cur(), H = hpcArgs(V, c);
+      const { V, c } = sel || cur(), H = hpcArgs(V, sel ? c.thresh : hpcTheta(V.HM, st.thr.f).theta);
       if (wk.w && !sent.has(H.key)) { await callWorker("wpg", { key: H.key, wpg: V.W }); sent.add(H.key); }
       return jsMaps("hpc", units, a, H, () => hpcMapsCore(units, a, Object.assign({ Wpg: V.W }, H), allocMain));
     },
@@ -1524,8 +1658,12 @@ function smoothMap(v, W, sigma) {
 // o.labels: a buffer that keeps the field labels for the outlines, or null.
 // o.lite: skip field detection, for frames drawn while the arena is moving.
 function processUnit(data, off, W, f, filt, o) {
-  const WW = W * W, v = o.dest;
-  for (let i = 0; i < WW; i++) { const x = data[off + i]; v[i] = filt.rectify ? (x > 0 ? x : 0) : x; }
+  const WW = W * W, v = o.dest, cut = filt.cut;
+  for (let i = 0; i < WW; i++) {
+    let x = data[off + i];
+    if (cut !== null && cut !== undefined) { x -= cut; if (x < 0) x = 0; }
+    v[i] = filt.rectify ? (x > 0 ? x : 0) : x;
+  }
   if (filt.sigma > 0) smoothMap(v, W, filt.sigma / f);
   let vmin = Infinity, vmax = -Infinity, peak = 0, peakI = -1, tot = 0;
   for (let i = 0; i < WW; i++) {
@@ -1670,10 +1808,12 @@ function mulberry32(seed) {
 // The processing actually applied: raw output ignores the rate-map settings.
 function eff() {
   const rate = st.mode === "rate";
-  return { rectify: rate && st.f.rectify, sigma: rate ? st.f.sigma : 0, thresh: st.f.thresh, minSize: st.f.minSize };
+  return { rectify: rate && st.f.rectify, sigma: rate ? st.f.sigma : 0, thresh: st.f.thresh, minSize: st.f.minSize,
+           cut: genericCut(st.pops[st.popKey]) };
 }
 const viewKey = () => JSON.stringify([st.popKey, st.x0, st.y0, st.S, eff(), isIdealPop(st.popKey) ? st.nmin : 0,
-                                      st.popKey === "rect" ? st.rectVar + ":" + rectKey() : HPC_POPS.includes(st.popKey) ? st.vhpc.v + ":" + fTag(st.vhpc.f) : ""]);
+                                      st.popKey === "rect" ? st.rectVar + ":" + rectKey() + ":" + st.thr.f + (st.rect.match ? "m" : "x")
+                                        : HPC_POPS.includes(st.popKey) ? st.vhpc.v + ":" + st.thr.f : ""]);
 function currentOrder(pop) {
   if (st.order && st.orderPop === pop.key) return st.order;
   return Array.from({ length: pop.n }, (_, i) => i);
@@ -1822,7 +1962,9 @@ function renderPopHead() {
 async function renderOnce() {
   const pop = st.pops[st.popKey];
   if (!pop) return;
+  ensureSample(pop);
   renderPopHead();
+  renderThrHint();
   const a = { x0: st.x0, y0: st.y0, S: st.S };
   const order = currentOrder(pop), pages = Math.max(1, Math.ceil(order.length / st.perPage));
   st.page = Math.min(Math.max(st.page, 0), pages - 1);
@@ -1955,7 +2097,7 @@ async function checkRect(V) {
   const RM = V.RM, R = RM.ref_arena, N = R.S * R.S, pop = V.pop, rec = st.rectChecks[V.key] = { per: {} };
   try {
     const ref = f32(await fetchText("rect_ref_" + V.key + ".b64.txt"));
-    let off = 0, maxAll = 0, badAll = 0;
+    let off = 0, maxAll = 0, badAll = 0, rebuilt = 0;
     for (const c of RM.codes) {
       const U = c.check_units.length, res = await pop.maps(c.check_units, R, true, c), ours = res.data;
       let maxAbs = 0, bad = 0;
@@ -1966,11 +2108,18 @@ async function checkRect(V) {
       }
       recycle(res);
       off += N * U;
+      // The slider rebuilds codes in the browser (rectFreqs, probit, r_table): at the six computed
+      // shares that must give the exported code exactly.
+      const Fb = rectFreqs(RM, c.n_freq, c.r);
+      let fb = 0;
+      for (let i = 0; i < Fb.length; i++) if (Fb[i] !== c.freqs[i]) fb++;
+      if (fb || Math.abs(probit(1 - c.f) / Math.sqrt(c.D) - c.thresh) > 1e-9 || rTable(RM, c.f) !== c.r) rebuilt++;
       rec.per[c.key] = { maxAbs, bad };
       maxAll = Math.max(maxAll, maxAbs); badAll += bad;
       if (c.key === rectKey() && st.popKey === "rect" && st.rectVar === V.key) renderPopHead();
     }
     if (off !== ref.length) throw new Error("reference has " + ref.length + " values, expected " + off);
+    if (rebuilt) throw new Error(rebuilt + " codes rebuilt in the browser differ from Python (frequencies, threshold or r)");
     rec.maxAbs = maxAll; rec.bad = badAll;
   } catch (e) { rec.error = errText(e); }
 }
@@ -2138,7 +2287,7 @@ function resSource(m) {
       name: (f, k) => lab + ", " + Math.round(100 * f) + "% active, modules " + V(k).HM.lambdas.join(", "),
       value: (f, k) => { const H = V(k), q = H.HX && H.HX.get(fTag(f)), v = q ? m.get(q) : null; return v == null ? NaN : v; },
       clickable: () => true, isSel: (f, k) => f === st.vhpc.f && k === st.vhpc.v,
-      pick: (f, k) => { setVhpc(k, f); setPop(key); },
+      pick: (f, k) => { setThrF(f); setVhpc(k); setPop(key); },
       missing: mods.every(x => !V(x.modules).HR) ? "Field results for this population are not in yet." : null,
       clickNote: "Click a cell to view those place cells.",
     };
@@ -2151,7 +2300,7 @@ function resSource(m) {
     name: codeName,
     value: (f, D) => resValue(m, f, D),
     clickable: f => f !== null, isSel: (f, D) => f !== null && f === st.rect.f && D === st.rect.D,
-    pick: (f, D) => { setRect(f, D); setPop("rect"); },
+    pick: (f, D) => { setThrF(f); setRect(f, D); setPop("rect"); },
     missing: !st.RR ? "Results for modules " + modulesText(st.RM) + " are not in yet. They appear here when the probe and field runs finish." : null,
     clickNote: "Click a rectified cell to view its units.",
   };
@@ -2204,6 +2353,8 @@ function renderSelectedHpc(key) {
   const { V, c } = st.pops[key].code(), HM = V.HM, q = V.HX && V.HX.get(c.key), rows = [];
   const fx = (x, d) => x == null ? "–" : x.toFixed(d);
   $("sel-title").textContent = st.pops[key].meta.label + ", " + Math.round(100 * c.f) + "% active, modules " + HM.lambdas.join(", ") + " (" + HM.Np + " cells)";
+  if (Math.abs(st.thr.f - c.f) > 1e-9)
+    rows.push(["Statistics for", "the computed sparsity " + Math.round(100 * c.f) + "% (the slider is at " + (100 * st.thr.f).toFixed(1) + "%)"]);
   rows.push(["Threshold θ", c.thresh.toFixed(4) + " on a sum of " + HM.lambdas.length + " weights"]);
   rows.push(["Active pairs", (100 * c.active_exact).toFixed(2) + "% of all (cell, place), exact"]);
   rows.push(["Grid period used", (+HM.lambda_ref).toFixed(2) + " cells (" + (HM.lambdas.join("") === "111213" ? "the middle module" : "geometric mean of the modules") + ")"]);
@@ -2227,6 +2378,8 @@ function renderSelected() {
   if (HPC_POPS.includes(st.res.pop)) { renderSelectedHpc(st.res.pop); return; }
   const c = st.pops.rect.code(), q = st.RX && st.RX.F.get(c.key), rows = [];
   $("sel-title").textContent = Math.round(100 * c.f) + "% active, " + c.D + " units (" + c.n_freq + " waves), modules " + modulesText(st.RM);
+  if (Math.abs(st.thr.f - c.f) > 1e-9)
+    rows.push(["Statistics for", "the computed code at " + Math.round(100 * c.f) + "% (the slider is at " + (100 * st.thr.f).toFixed(1) + "%)"]);
   rows.push(["Kernel radius r", c.r.toFixed(2) + " cells (unrectified ideal " + st.RM.r_ideal + ")"]);
   rows.push(["Grid period used", (+st.RM.lambda_ref).toFixed(2) + " cells (" + (st.RM.lambdas.join("") === "111213" ? "the middle module" : "geometric mean of the modules") + ")"]);
   if (q) {
@@ -2353,10 +2506,10 @@ function showRect() {
   $("vhpc-row").hidden = !hp; $("vhpc-hint").hidden = !hp;
 }
 // Another place-cell code (module set v, sparsity f): same population, so orders start over.
-function setVhpc(v, f) {
-  if (v === st.vhpc.v && f === st.vhpc.f) return;
-  st.vhpc = { v, f };
-  $("vhpc-v").value = v; $("vhpc-f").value = String(f);
+function setVhpc(v) {
+  if (v === st.vhpc.v) return;
+  st.vhpc = { v, f: nearestF(st.thr.f) };
+  $("vhpc-v").value = v;
   for (const k of HPC_POPS) st.pops[k].refresh();
   if (HPC_POPS.includes(st.popKey)) {
     st.sel = null; st.page = 0; st.sortToken++;
@@ -2376,11 +2529,25 @@ function setResPop(p) {
   buildMeasureSelect();
   renderResults();
 }
+// The rectified code's radius: matched to the slider, or fixed at the r matched for one computed share.
+function buildRMenu() {
+  const T = st.RM.r_table, opts = [["match", "Matched to the slider"]].concat(COMPUTED_F.map(f =>
+    [String(f), "Fixed at r = " + rTable(st.RM, f).toFixed(2) + " (matched for " + Math.round(100 * f) + "%)"]));
+  $("rect-r").replaceChildren(...opts.map(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; return o; }));
+  $("rect-r").value = st.rect.match ? "match" : String(st.rect.f);
+}
+function setRMode(v) {
+  const match = v === "match", f = match ? nearestF(st.thr.f) : +v;
+  st.rect.match = match;
+  if (f !== st.rect.f) setRect(f, st.rect.D);
+  else { st.pops.rect.refresh(); updateSortNote(); requestRender(); renderResults(); }
+  renderThrHint();
+}
 // A new code in the rectified grid: same population, different unit count, so orders start over.
 function setRect(f, D) {
   if (f === st.rect.f && D === st.rect.D) return;
-  st.rect = { f, D };
-  $("rect-f").value = String(f); $("rect-D").value = String(D);
+  st.rect = { f, D, match: st.rect.match };
+  $("rect-r").value = st.rect.match ? "match" : String(f); $("rect-D").value = String(D);
   st.pops.rect.refresh();
   if (st.popKey === "rect") {
     st.sel = null; st.page = 0; st.sortToken++;
@@ -2399,6 +2566,7 @@ async function setRectVariant(key) {
   try { V = await loadRectVariant(key); }
   catch (e) { setStatus("Could not load the codes for these modules: " + errText(e), true); $("rect-v").value = st.rectVar; return; }
   useRectVariant(V);
+  buildRMenu();
   st.pops.rect.refresh();
   if (st.popKey === "rect") {
     st.sel = null; st.page = 0; st.sortToken++;
@@ -2487,13 +2655,12 @@ function buildControls() {
   const pct = f => Math.round(100 * f) + "%";
   $("rect-v").replaceChildren(...st.RV.map(v => { const o = document.createElement("option"); o.value = v.key; o.textContent = v.label + (v.has_results ? "" : ", results pending"); return o; }));
   $("rect-v").value = st.rectVar;
-  $("rect-f").replaceChildren(...st.RM.Fs.map(f => { const o = document.createElement("option"); o.value = String(f); o.textContent = pct(f) + " of units at each place"; return o; }));
+  buildRMenu();
   $("rect-D").replaceChildren(...st.RM.Ds.map(D => { const o = document.createElement("option"); o.value = String(D); o.textContent = D + " units (" + D / 2 + " waves)"; return o; }));
-  $("rect-f").value = String(st.rect.f); $("rect-D").value = String(st.rect.D);
+  $("rect-D").value = String(st.rect.D);
   showRect();
   $("vhpc-v").replaceChildren(...hpcModules().map(m => { const o = document.createElement("option"); o.value = m.modules; o.textContent = m.label; return o; }));
-  $("vhpc-f").replaceChildren(...st.hpcVars[st.HV[0].key].HM.Fs.map(f => { const o = document.createElement("option"); o.value = String(f); o.textContent = pct(f) + " of (cell, place) pairs"; return o; }));
-  $("vhpc-v").value = st.vhpc.v; $("vhpc-f").value = String(st.vhpc.f);
+  $("vhpc-v").value = st.vhpc.v;
   buildMeasureSelect();
   $("res-k").replaceChildren(...["1", "3", "5", "10", "20"].map(k => { const o = document.createElement("option"); o.value = k; o.textContent = k; return o; }));
   $("res-k").value = st.res.K;
@@ -2563,10 +2730,12 @@ function wireControls() {
   $("sort").addEventListener("change", () => setSort($("sort").value));
   $("band").addEventListener("change", () => setBand(+$("band").value));
   $("rect-v").addEventListener("change", () => setRectVariant($("rect-v").value));
-  $("vhpc-v").addEventListener("change", () => setVhpc($("vhpc-v").value, st.vhpc.f));
-  $("vhpc-f").addEventListener("change", () => setVhpc(st.vhpc.v, +$("vhpc-f").value));
+  $("vhpc-v").addEventListener("change", () => setVhpc($("vhpc-v").value));
+  $("thr").addEventListener("input", () => { interact(); setThrF(+$("thr").value / 100); });
+  $("thr").addEventListener("change", settle);
+  $("thr-others").addEventListener("change", () => { st.thr.others = $("thr-others").checked; updateSortNote(); renderThrHint(); requestRender(); });
   document.querySelectorAll("#res-pop button").forEach(b => b.addEventListener("click", () => setResPop(b.dataset.rp)));
-  $("rect-f").addEventListener("change", () => setRect(+$("rect-f").value, st.rect.D));
+  $("rect-r").addEventListener("change", () => setRMode($("rect-r").value));
   $("rect-D").addEventListener("change", () => setRect(st.rect.f, +$("rect-D").value));
   $("res-measure").addEventListener("change", () => { st.res.measure = $("res-measure").value; renderResults(); });
   $("res-k").addEventListener("change", () => { st.res.K = $("res-k").value; renderResults(); });
