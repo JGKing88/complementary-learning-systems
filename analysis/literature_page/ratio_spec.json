@@ -1,0 +1,178 @@
+{
+  "Rat": {
+    "columns": [
+      {
+        "label": "M1",
+        "lo_cm": 39,
+        "hi_cm": 49
+      },
+      {
+        "label": "M2",
+        "lo_cm": 48,
+        "hi_cm": 60
+      },
+      {
+        "label": "M3",
+        "lo_cm": 65,
+        "hi_cm": 93
+      },
+      {
+        "label": "M4",
+        "lo_cm": 97,
+        "hi_cm": 128
+      },
+      {
+        "label": "M5, putative",
+        "lo_cm": 136,
+        "hi_cm": 172
+      },
+      {
+        "label": "Dorsal MEC, 18 m track",
+        "lo_cm": 91,
+        "hi_cm": 171,
+        "only_rows_containing": "18 m track"
+      },
+      {
+        "label": "Intermediate MEC, 18 m track",
+        "lo_cm": 202,
+        "hi_cm": 301,
+        "only_rows_containing": "18 m track"
+      },
+      {
+        "label": "Ventral MEC, 18 m track",
+        "lo_cm": 269,
+        "hi_cm": 370,
+        "only_rows_containing": "18 m track"
+      }
+    ],
+    "rows": [
+      {
+        "label": "Dorsal CA1, T maze and 2.5 m track",
+        "lo_cm": 29,
+        "hi_cm": 75
+      },
+      {
+        "label": "Dorsal CA1 and CA3 pooled, 1.0 and 1.7 m tracks",
+        "lo_cm": 42,
+        "hi_cm": 52
+      },
+      {
+        "label": "Dorsal CA1, familiar 68 cm box",
+        "lo_cm": 24,
+        "hi_cm": 24
+      },
+      {
+        "label": "Dorsal CA1, arenas, largest field per cell",
+        "lo_cm": 36,
+        "hi_cm": 58
+      },
+      {
+        "label": "Dorsal CA1, novel 48 m track",
+        "lo_cm": 65,
+        "hi_cm": 65
+      },
+      {
+        "label": "Dorsal CA3, radial maze and 2.5 m track",
+        "lo_cm": 34,
+        "hi_cm": 50
+      },
+      {
+        "label": "Dorsal CA3, 1 m box",
+        "lo_cm": 28,
+        "hi_cm": 28
+      },
+      {
+        "label": "Dorsal CA3, arenas, largest field per cell, one rat",
+        "lo_cm": 32,
+        "hi_cm": 42
+      },
+      {
+        "label": "Dorsal CA3, cells at 7 to 19% of the long axis, 18 m track",
+        "lo_cm": 98,
+        "hi_cm": 112
+      },
+      {
+        "label": "Intermediate CA1, about 65% of the axis, familiar 68 cm box",
+        "lo_cm": 49,
+        "hi_cm": 49
+      },
+      {
+        "label": "Intermediate CA1, 1.3 m track, from field area",
+        "lo_cm": 37,
+        "hi_cm": 37
+      },
+      {
+        "label": "Intermediate CA3, cells at 55 to 70%, 18 m track",
+        "lo_cm": 307,
+        "hi_cm": 373
+      },
+      {
+        "label": "Ventral CA3, cells at 71 to 87%, 18 m track",
+        "lo_cm": 410,
+        "hi_cm": 552
+      }
+    ]
+  },
+  "Mouse": {
+    "columns": [
+      {
+        "label": "M1",
+        "lo_cm": 30,
+        "hi_cm": 36
+      },
+      {
+        "label": "M2, low end derived",
+        "lo_cm": 42,
+        "hi_cm": 60
+      },
+      {
+        "label": "M3, inferred from 1D firing",
+        "lo_cm": 65,
+        "hi_cm": 76
+      }
+    ],
+    "rows": [
+      {
+        "label": "Dorsal CA1, tetrodes, real arenas",
+        "lo_cm": 19.7,
+        "hi_cm": 28
+      },
+      {
+        "label": "Dorsal CA1, one-photon imaging, 84 cm track and 120 cm maze",
+        "lo_cm": 22.1,
+        "hi_cm": 24
+      },
+      {
+        "label": "Dorsal CA1, electrodes, 1.8 m virtual track",
+        "lo_cm": 41,
+        "hi_cm": 43
+      },
+      {
+        "label": "Dorsal CA1, two-photon imaging, 1.8 to 4 m virtual tracks",
+        "lo_cm": 38,
+        "hi_cm": 50
+      },
+      {
+        "label": "Dorsal CA3, tetrodes, 50 cm box and 100 cm track",
+        "lo_cm": 27.0,
+        "hi_cm": 27.4,
+        "show": "27.0 to 27.4 cm"
+      },
+      {
+        "label": "Dorsal CA2/3 and CA3a, two-photon imaging, 3 to 4 m virtual tracks",
+        "lo_cm": 40,
+        "hi_cm": 44
+      },
+      {
+        "label": "Intermediate CA1, one-photon imaging, 1.2 m maze",
+        "lo_cm": 27.2,
+        "hi_cm": 34.4
+      },
+      {
+        "label": "Ventral CA1, tetrodes, novel 70 cm cylinder",
+        "lo_cm": 29.3,
+        "hi_cm": 41.9
+      }
+    ]
+  }
+}
