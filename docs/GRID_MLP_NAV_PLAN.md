@@ -2187,9 +2187,11 @@ from `scratch` at update 39k with the curriculum from 2 arenas,
 `protocol_h2048_motion_scratch_s0`; from `ft` at 43.5k at 6 arenas without
 a curriculum, `protocol_h2048_motion6_ft_s0`, after a curriculum run from 2
 arenas lost its multi-goal storage while stuck at 2). Offline under that
-movement the `scratch` fine-tune holds 2.7, 3.5 and 3.8 goals at updates
-2k, 6k and 8k (5 arenas trained); the `ft` fine-tune falls from 3.0 at 2k
-to 2.2 at 6k.
+movement the `scratch` fine-tune reached 6 arenas at update 15k and held
+2.4 to 4.5 goals in the last block over updates 2k to 30k (mean about 3.7,
+final 3.1 at 30k: 0.52, 0.74, 0.67, 0.46, 0.43, 0.30), against 5.4 for the
+same memory under axis moves; the `ft` fine-tune fell from 3.0 at 2k to
+2.2 at 6k and was stopped.
 
 The zero-shot agent with the `scratch` fine-tune at update 8.5k still
 fails: first visit 0.68, revisit 0.26 in 83 steps. Logged along the
