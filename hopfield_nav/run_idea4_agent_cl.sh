@@ -15,7 +15,7 @@
 # 200-step cap, seed 3000, one oracle store per env, goal radius 1, sampled).
 #
 #   MEM=<idea 4 memory.pt> TAG=<name> [CKPT=<idea 1 navigate_u*.pt>] \
-#     [N_ENVS=6] [ITERS_PER_BLOCK=40] [MAX_STEPS=200] [STOCHASTIC=1] [C_SCALE=0.5] \
+#     [N_ENVS=6] [ITERS_PER_BLOCK=40] [MAX_STEPS=200] [STOCHASTIC=1] [C_SCALE=0.5] [SKIP_STAYS=0] \
 #     REPO=<code snapshot> sbatch hopfield_nav/run_idea4_agent_cl.sh
 #
 # Writes $CLS_RUNS/idea4/agent_cl/cl_<TAG>.json, the plotter's panels and the
@@ -32,6 +32,7 @@ MAX_STEPS=${MAX_STEPS:-200}
 SEED=${SEED:-3000}
 STOCHASTIC=${STOCHASTIC:-1}
 C_SCALE=${C_SCALE:-0.5}
+SKIP_STAYS=${SKIP_STAYS:-0}     # 1: step the memory only when the agent's cell changes
 
 cd "$REPO"
 module load miniforge/24.3.0-0
@@ -56,6 +57,7 @@ python -u -m analysis.continual.agenthash \
     --lock_store_after_goal --oracle_store_at_goal \
     --oracle_lock_store_not_at_goal --goal_radius 1 \
     --recurrent_memory "$MEM" --recurrent_c_scale "$C_SCALE" \
+    $([ "$SKIP_STAYS" = "1" ] && echo --recurrent_skip_stays) \
     $([ "$STOCHASTIC" = "1" ] && echo --stochastic_policy)
 python -u -m analysis.continual.plotting --history "$prefix.json" --out_prefix "$prefix" \
     --smooth 10 --show_std 0

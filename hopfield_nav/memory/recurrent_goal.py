@@ -51,7 +51,7 @@ class RecurrentGoalMemory:
     is_recurrent_goal_memory = True                 # GridMemoryReadout.signal dispatches on it
 
     def __init__(self, path: str, device="cpu", arena_size: int = 20,
-                 c_scale: float = 0.5, c_min: float = 0.5):
+                 c_scale: float = 0.5, c_min: float = 0.5, skip_stays: bool = False):
         self.path, self.device = str(path), str(device)
         self.model = _load(self.path, self.device)
         self.h = self.model.init_state(1, self.device)
@@ -59,6 +59,12 @@ class RecurrentGoalMemory:
         self.num_memories = 0                      # stores, for the logs
         self.arena_size = int(arena_size)
         self.c_scale, self.c_min = float(c_scale), float(c_min)
+        # skip_stays: step the network only when the agent's cell changes, and
+        # repeat the last read otherwise. The agent moves continuously and is
+        # snapped to cells, so its cell often stays put between steps; the
+        # memory was trained on walks that move one cell every step.
+        self.skip_stays = bool(skip_stays)
+        self.last_cell, self.last_out = None, None
 
     def set_store_flag(self, on: bool) -> None:
         """Mark the next read as the store step (the oracle store fires)."""
@@ -69,6 +75,7 @@ class RecurrentGoalMemory:
         reads are in, that arena's true goal (local cell) and whether its goal
         is stored. ``recurrent_signal`` then logs how the reads compare."""
         self.info = info
+        self.last_cell, self.last_out = None, None      # a new mini-episode always steps
         if not hasattr(self, "stats"):
             self.stats = {}
 
@@ -82,6 +89,9 @@ class RecurrentGoalMemory:
                 continue
             r = out.setdefault(j, {})
             n = max(s["n"], 1)
+            tail = "" if known else "_unknown"
+            r["stay_frac" + tail] = s["stay"] / n
+            r["diag_frac" + tail] = s["diag"] / n
             if known:
                 r.update(far_hit=s["hit"] / max(s["far"], 1), cos_d=s["cos"] / max(s["ncos"], 1),
                          c=s["c"] / n, reads=s["n"])
@@ -121,8 +131,17 @@ def recurrent_signal(readout, memories, views, psi, positions, env_offset):
     B = len(memories)
     ph = np.zeros((B, 12), dtype=np.float32)
     sig = np.zeros(B, dtype=np.float32)
+    moves = []
     for b, m in enumerate(memories):
-        ph[b], logit = m.step(canv[b], own[b])
+        cell = (int(positions[b, 0]), int(positions[b, 1]))
+        prev = m.last_cell
+        moves.append(None if prev is None else
+                     (abs(cell[0] - prev[0]) > 0) + (abs(cell[1] - prev[1]) > 0))
+        if m.skip_stays and prev == cell and m.flag == 0.0 and m.last_out is not None:
+            ph[b], logit = m.last_out                    # the cell did not change: no step
+        else:
+            ph[b], logit = m.step(canv[b], own[b])
+        m.last_cell, m.last_out = cell, (ph[b].copy(), logit)
         sig[b] = 1.0 / (1.0 + np.exp(-logit))
     size = memories[0].arena_size
     gx, gy = np.meshgrid(np.arange(size), np.arange(size), indexing="ij")
@@ -141,7 +160,11 @@ def recurrent_signal(readout, memories, views, psi, positions, env_offset):
         if info is None:
             continue
         key = (info["block"], info["arena"], bool(info["known"]))
-        s = m.stats.setdefault(key, dict(n=0, far=0, hit=0, cos=0.0, ncos=0, c=0.0, on=0))
+        s = m.stats.setdefault(key, dict(n=0, far=0, hit=0, cos=0.0, ncos=0, c=0.0, on=0,
+                                         stay=0, diag=0))
+        if moves[b] is not None:
+            s["stay"] += int(moves[b] == 0)
+            s["diag"] += int(moves[b] == 2)
         goal = np.asarray(info["goal"], dtype=np.float64)
         to_goal = goal - positions[b]
         s["n"] += 1
