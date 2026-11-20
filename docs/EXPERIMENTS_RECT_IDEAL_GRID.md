@@ -229,3 +229,26 @@ more.
 
 All 11 measures at every K are in `grid_results.json`, on the page, and printed by
 `python -m analysis.rect_ideal.summary`.
+
+## Other grid modules: 11, 15, 23 (launched 2026-11-20)
+
+The ideal code depends on the grid modules only through the scaffold size `Npos = prod(lambdas)`,
+because its units are waves over position (`IdealEncoder` decodes position exactly from the module
+phases by the Chinese remainder theorem). Modules 11, 15, 23 (pairwise coprime) give a 3795-cell
+scaffold, against 1716. Two variants (`codes.VARIANTS`), each the full 6 x 5 grid, probe and fields:
+
+* `m111523_r16`: the same kernel, r = 16 cells for the unrectified ideal and the same matched r per
+  f (28.07 at 2% to 17.86 at 50%, within 0.01 of the original). The Euler-characteristic formula
+  predicts the same fields in cells and 4.89 times as many per unit (the area ratio,
+  (3795 / 1716)^2), and the Hopfield measures should barely move.
+* `m111523_rs`: r scaled by the modules' geometric-mean period, `Npos^(1/3)` = 15.60 cells against
+  11.97, to r = 20.85 (half-width 24.5 cells); matched r from 36.6 at 2% to 23.3 at 50%. Fields keep
+  their size in grid periods (one 10%, 256-unit test: median 2.88 periods of 15.6 cells, against
+  2.87 periods of 12 for the original), and the 20 x 20 probe arenas are smaller relative to the
+  kernel.
+
+Sizes for both are in grid periods of 15.60 cells (the geometric mean), and in cells
+(`support.diam_cells`). Results: `$CLS_RESULTS/rect_ideal_grid_m111523_r16/` and
+`rect_ideal_grid_m111523_rs/`; launch with `VARIANT=<name> bash analysis/rect_ideal/run_probe.sh` and
+`run_fields.sh`. One test field run (`m111523_rs`, 10% of 256 units) measured 565 fields per unit
+against 574 predicted.

@@ -171,10 +171,11 @@ table.heat .cell.na { background: var(--surface-2); color: var(--muted); }
         <div class="ptitle" id="t-pop">Population</div>
         <div class="seg" id="pops"></div>
         <div class="rectsel" id="rect-row" hidden>
+          <div class="row"><label for="rect-v">Modules</label><select id="rect-v" class="grow"></select></div>
           <div class="row"><label for="rect-f">Active</label><select id="rect-f" class="grow"></select></div>
           <div class="row"><label for="rect-D">Units</label><select id="rect-D" class="grow"></select></div>
         </div>
-        <p class="hint" id="rect-hint" hidden>Each code is the ideal code with half as many waves as units, rotated by a fixed Walsh-Hadamard matrix, thresholded so this share of units is active at every place, and scaled to unit length. The kernel radius r grows as the code gets sparser, so that the population kernel, after one inhibition constant is removed, is as wide as the ideal's at r = 16. 4096-unit codes take a few seconds per arena; use a smaller arena to drag smoothly.</p>
+        <p class="hint" id="rect-hint" hidden>Each code is the ideal code with half as many waves as units, rotated by a fixed Walsh-Hadamard matrix, thresholded so this share of units is active at every place, and scaled to unit length. The kernel radius r grows as the code gets sparser, so that the population kernel, after one inhibition constant is removed, is as wide as the unrectified ideal's. The ideal code depends on the grid modules only through the scaffold size: 11 × 12 × 13 = 1716 cells, 11 × 15 × 23 = 3795. On the larger scaffold the arena's coordinates are read on it, and the map above shows its first 1716 cells. "r scaled" widens the kernel by the modules' geometric-mean period (15.6 cells against 12.0). 4096-unit codes take a few seconds per arena; use a smaller arena to drag smoothly.</p>
         <div class="row" id="band-row" hidden>
           <label for="band">Remove slow waves</label>
           <select id="band" class="grow"></select>
@@ -353,6 +354,7 @@ let NPOS = 1716;
 const st = {
   M: null, pops: {}, mlp: {}, popKey: "rect",
   RM: null, RR: null, RX: null, rect: { f: 0.1, D: 1024 },
+  rectVar: "m111213", RV: [], rectVars: {}, rectChecks: {},
   res: { measure: "err", K: "5", inh: true, hist: "fields", hover: -1 },
   x0: 808, y0: 808, S: 100,
   perPage: 64, page: 0, scale: "unit",
@@ -442,12 +444,10 @@ function unpackMlp(meta, all) {
 }
 
 async function loadAll() {
-  const [M, RM, RR] = await Promise.all([
-    fetchText("manifest.json").then(JSON.parse), fetchText("rect_manifest.json").then(JSON.parse),
-    fetchText("rect_results.json").then(JSON.parse).catch(() => null)]);
-  st.M = M; NPOS = M.npos;
-  st.RM = RM; st.RR = RR; st.RX = RR ? indexResults(RR) : null;
-  st.pops.rect = makeRect(RM);
+  const [M, RV] = await Promise.all([
+    fetchText("manifest.json").then(JSON.parse), fetchText("rect_variants.json").then(JSON.parse)]);
+  st.M = M; NPOS = M.npos; st.RV = RV;
+  useRectVariant(await loadRectVariant(st.rectVar));
   const P = M.populations;
   const [wpg, wpgS, qPlace, ...wMlp] = await Promise.all([
     fetchText(P.hippocampus.wpg_file), fetchText(P.hippocampus_smooth.wpg_file), fetchText(P.ideal_place.q_file),
@@ -819,6 +819,18 @@ function makeIdealSparse(key, meta, signs) {
 // for a share f of active units. Same transform as the sparse populations above (idealRotCompute
 // with R.thresh); the signs travel with each job because they depend on D.
 function rectKey(f = st.rect.f, D = st.rect.D) { return "f" + String(Math.round(100 * f)).padStart(2, "0") + "_D" + D; }
+// One grid-module variant (rect_variants.json): its codes, results and population, loaded once.
+async function loadRectVariant(key) {
+  if (!st.rectVars[key]) {
+    const [RM, RR] = await Promise.all([
+      fetchText("rect_manifest_" + key + ".json").then(JSON.parse),
+      fetchText("rect_results_" + key + ".json").then(JSON.parse).catch(() => null)]);
+    st.rectVars[key] = { key, RM, RR, RX: RR ? indexResults(RR) : null, pop: makeRect(RM) };
+  }
+  return st.rectVars[key];
+}
+function useRectVariant(V) { st.rectVar = V.key; st.RM = V.RM; st.RR = V.RR; st.RX = V.RX; st.pops.rect = V.pop; }
+const modulesText = RM => RM.lambdas.join(", ");
 function makeRect(RM) {
   const byKey = new Map(RM.codes.map(c => [c.key, c]));
   const signs = {}, flat = new Map(), box = { cache: null };
@@ -833,19 +845,20 @@ function makeRect(RM) {
       const c = cur();
       meta.description = Math.round(100 * c.f) + "% of " + c.D + " units active at each place: relu(Q z − t) scaled to unit length, " +
         "with z the ideal code of " + c.n_freq + " waves at kernel radius r = " + c.r.toFixed(1) + " cells and Q the fixed " +
-        c.D + "-unit Walsh-Hadamard rotation.";
+        c.D + "-unit Walsh-Hadamard rotation. Grid modules " + modulesText(RM) + ", a " + RM.npos + "-cell scaffold.";
     },
     label(u) { return "unit " + u; },
     info(u) {
       const c = cur();
       return [["Output unit", String(u)], ["Code", Math.round(100 * c.f) + "% active, " + c.D + " units"],
-              ["Waves", c.n_freq + ", r = " + c.r.toFixed(2) + " cells"], ["Threshold t", c.thresh.toFixed(5)]];
+              ["Waves", c.n_freq + ", r = " + c.r.toFixed(2) + " cells"], ["Threshold t", c.thresh.toFixed(5)],
+              ["Grid modules", modulesText(RM) + " (scaffold " + RM.npos + " cells)"]];
     },
     maps(units, a, ref, code) {
       const c = code || cur();
       if (!flat.has(c.key)) flat.set(c.key, Int32Array.from(c.freqs));
-      const R = { npos: NPOS, F: flat.get(c.key), amp: c.amp, thresh: c.thresh, signs: signs[c.D],
-                  key: "rect," + c.key + "," + a.x0 + "," + a.y0 + "," + a.S };
+      const R = { npos: RM.npos, F: flat.get(c.key), amp: c.amp, thresh: c.thresh, signs: signs[c.D],
+                  key: "rect," + RM.variant + "," + c.key + "," + a.x0 + "," + a.y0 + "," + a.S };
       return jsMaps("ideal_rot", units, a, R, () => idealRotMapsCore(units, a, R, allocMain, box));
     },
   };
@@ -1589,7 +1602,7 @@ function eff() {
   return { rectify: rate && st.f.rectify, sigma: rate ? st.f.sigma : 0, thresh: st.f.thresh, minSize: st.f.minSize };
 }
 const viewKey = () => JSON.stringify([st.popKey, st.x0, st.y0, st.S, eff(), isIdealPop(st.popKey) ? st.nmin : 0,
-                                      st.popKey === "rect" ? rectKey() : ""]);
+                                      st.popKey === "rect" ? st.rectVar + ":" + rectKey() : ""]);
 function currentOrder(pop) {
   if (st.order && st.orderPop === pop.key) return st.order;
   return Array.from({ length: pop.n }, (_, i) => i);
@@ -1719,7 +1732,9 @@ function caption(r) {
   }
 }
 function renderPopHead() {
-  const pop = st.pops[st.popKey], ck = st.popKey === "rect" ? (st.checks.rectCodes || {})[rectKey()] : st.checks[st.popKey];
+  const rc = st.rectChecks[st.rectVar];
+  const pop = st.pops[st.popKey], ck = st.popKey !== "rect" ? st.checks[st.popKey]
+    : rc && rc.error ? { error: rc.error } : rc ? rc.per[rectKey()] : undefined;
   $("pop-title").textContent = pop.meta.label + " · " + pop.n + " units";
   const desc = $("pop-desc");
   const band = isIdealPop(st.popKey) && st.nmin
@@ -1832,7 +1847,7 @@ async function runChecks() {
   for (const key of POP_ORDER) {
     const pop = st.pops[key];
     if (key === "rect") {
-      try { await checkRect(); } catch (e) { st.checks.rect = { error: errText(e) }; }
+      if (!st.rectChecks[st.rectVar]) await checkRect(st.rectVars[st.rectVar]);
       renderChecks();
       if (st.popKey === "rect") renderPopHead();
       continue;
@@ -1854,34 +1869,45 @@ async function runChecks() {
     if (key === st.popKey) renderPopHead();
   }
 }
-// Every rectified code, on its check units (rect_ref.b64.txt: code, then cell, then unit).
-async function checkRect() {
-  const RM = st.RM, R = RM.ref_arena, N = R.S * R.S, pop = st.pops.rect;
-  const ref = f32(await fetchText("rect_ref.b64.txt")), per = {};
-  let off = 0, maxAll = 0, badAll = 0;
-  for (const c of RM.codes) {
-    const U = c.check_units.length, res = await pop.maps(c.check_units, R, true, c), ours = res.data;
-    let maxAbs = 0, bad = 0;
-    for (let q = 0; q < U; q++) for (let i = 0; i < N; i++) {
-      const d = Math.abs(ours[q * N + i] - ref[off + i * U + q]);
-      if (!(d <= 1e-4)) bad++;
-      if (d > maxAbs) maxAbs = d;
+// Every code of one module variant, on its check units (rect_ref_<variant>.b64.txt: code, then
+// cell, then unit). The record is st.rectChecks[variant]: per-code results, then the totals.
+async function checkRect(V) {
+  const RM = V.RM, R = RM.ref_arena, N = R.S * R.S, pop = V.pop, rec = st.rectChecks[V.key] = { per: {} };
+  try {
+    const ref = f32(await fetchText("rect_ref_" + V.key + ".b64.txt"));
+    let off = 0, maxAll = 0, badAll = 0;
+    for (const c of RM.codes) {
+      const U = c.check_units.length, res = await pop.maps(c.check_units, R, true, c), ours = res.data;
+      let maxAbs = 0, bad = 0;
+      for (let q = 0; q < U; q++) for (let i = 0; i < N; i++) {
+        const d = Math.abs(ours[q * N + i] - ref[off + i * U + q]);
+        if (!(d <= 1e-4)) bad++;
+        if (d > maxAbs) maxAbs = d;
+      }
+      recycle(res);
+      off += N * U;
+      rec.per[c.key] = { maxAbs, bad };
+      maxAll = Math.max(maxAll, maxAbs); badAll += bad;
+      if (c.key === rectKey() && st.popKey === "rect" && st.rectVar === V.key) renderPopHead();
     }
-    recycle(res);
-    off += N * U;
-    per[c.key] = { maxAbs, bad };
-    maxAll = Math.max(maxAll, maxAbs); badAll += bad;
-    st.checks.rectCodes = per;
-    if (c.key === rectKey() && st.popKey === "rect") renderPopHead();
-  }
-  if (off !== ref.length) throw new Error("reference has " + ref.length + " values, expected " + off);
-  st.checks.rect = { maxAbs: maxAll, bad: badAll };
+    if (off !== ref.length) throw new Error("reference has " + ref.length + " values, expected " + off);
+    rec.maxAbs = maxAll; rec.bad = badAll;
+  } catch (e) { rec.error = errText(e); }
 }
 function renderChecks() {
-  $("checks").replaceChildren(...POP_ORDER.map(k => {
-    const li = document.createElement("li"), ck = st.checks[k], chip = document.createElement("span");
-    li.append(document.createTextNode(st.pops[k].meta.label + (k === "rect" ? " (all " + st.RM.codes.length + " codes)" : "") + " "));
-    if (!ck) { chip.className = "chip wait"; chip.textContent = "pending"; }
+  const rows = [];
+  for (const k of POP_ORDER) {
+    if (k !== "rect") { rows.push([st.pops[k].meta.label, st.checks[k], "pending"]); continue; }
+    for (const v of st.RV) {
+      const rc = st.rectChecks[v.key], done = rc && (rc.error || rc.maxAbs !== undefined);
+      rows.push(["Rectified ideal, modules " + v.label + " (30 codes)", done ? rc : null,
+                 st.rectVars[v.key] ? "pending" : "checked when you pick these modules"]);
+    }
+  }
+  $("checks").replaceChildren(...rows.map(([label, ck, waiting]) => {
+    const li = document.createElement("li"), chip = document.createElement("span");
+    li.append(document.createTextNode(label + " "));
+    if (!ck) { chip.className = "chip wait"; chip.textContent = waiting; }
     else if (ck.error) { chip.className = "chip bad"; chip.textContent = ck.error; }
     else if (ck.bad) { chip.className = "chip bad"; chip.textContent = ck.bad + " values off"; }
     else { chip.className = "chip ok"; chip.textContent = "max diff " + ck.maxAbs.toExponential(1); }
@@ -1921,15 +1947,17 @@ const RES_MEASURES = [
   { key: "fpu_max", group: "fields", label: "Fields per unit, most", p: 0, get: q => q.support.fields_per_unit.max,
     def: "The largest number of fields any unit of the code has over the whole scaffold." },
   { key: "dmed", group: "fields", label: "Field diameter, median", unit: "grid periods", p: 2, get: q => q.support.diam_over_lambda.median,
-    def: "A field's diameter is that of the circle with its area, divided by 12 cells (the grid modules are 11, 12 and 13 cells). Median over every field of every unit." },
+    def: "A field's diameter is that of the circle with its area, divided by one grid period: 12 cells for modules 11, 12, 13 (the middle module) and 15.6 cells for 11, 15, 23 (their geometric mean). Median over every field of every unit." },
   { key: "dmean", group: "fields", label: "Field diameter, mean", unit: "grid periods", p: 2, get: q => q.support.diam_over_lambda.mean,
-    def: "Mean over every field of every unit of the equivalent diameter over 12 cells." },
+    def: "Mean over every field of every unit of the equivalent diameter, in grid periods (12 cells for 11, 12, 13; 15.6 for 11, 15, 23)." },
   { key: "dp5", group: "fields", label: "Field diameter, 5th percentile", unit: "grid periods", p: 2, get: q => q.support.diam_over_lambda.p5,
-    def: "5% of fields are smaller than this (equivalent diameter over 12 cells)." },
+    def: "5% of fields are smaller than this (equivalent diameter in grid periods)." },
   { key: "dp95", group: "fields", label: "Field diameter, 95th percentile", unit: "grid periods", p: 2, get: q => q.support.diam_over_lambda.p95,
-    def: "5% of fields are larger than this (equivalent diameter over 12 cells)." },
+    def: "5% of fields are larger than this (equivalent diameter in grid periods)." },
   { key: "dmax", group: "fields", label: "Field diameter, largest", unit: "grid periods", p: 2, get: q => q.support.diam_over_lambda.max,
-    def: "The largest field of any unit (equivalent diameter over 12 cells)." },
+    def: "The largest field of any unit (equivalent diameter in grid periods)." },
+  { key: "dcells", group: "fields", label: "Field diameter in cells, median", unit: "cells", p: 1, get: q => q.support.diam_cells.median,
+    def: "Median equivalent diameter in scaffold cells, without dividing by a grid period, so the module sets compare directly." },
   { key: "daw", group: "fields", label: "Field diameter, cell-weighted mean", unit: "grid periods", p: 2, get: q => q.support.diam_over_lambda_area_weighted_mean,
     def: "Mean diameter of the field that a random active cell belongs to. Large fields count in proportion to their area." },
   { key: "u9", group: "fields", label: "Fields under 9 cells", share: true, get: q => q.support.share_fields_under9,
@@ -1941,7 +1969,7 @@ const RES_MEASURES = [
   { key: "p20_dmed", group: "fields", label: "Field diameter at 20% of peak, median", unit: "grid periods", p: 2, get: q => q.peak20.diam_over_lambda.median,
     def: "Median equivalent diameter over 12 cells of the 20%-of-peak fields." },
   { key: "hw", group: "kernel", label: "Kernel half-width after inhibition", unit: "cells", p: 1, get: q => q.kernel.half_width_inh,
-    def: "Distance at which the code's mean cosine similarity, after the one global inhibition constant is subtracted, falls to 0.5 (both axes, 1500 places). The ideal at r = 16 gives about 19 cells; r was chosen to match it." },
+    def: "Distance at which the code's mean cosine similarity, after the one global inhibition constant is subtracted, falls to 0.5 (both axes, 1500 places). r was chosen to match the unrectified ideal's: about 19 cells at r = 16, 24.5 at r = 20.8." },
   { key: "floor", group: "kernel", label: "Similarity floor without inhibition", p: 3, get: q => q.kernel.floor_raw,
     def: "Mean cosine similarity between random far-apart places, before inhibition. Inhibition brings it to about 0." },
   { key: "r", group: "kernel", label: "Kernel radius r", unit: "cells", p: 2, get: q => q.r,
@@ -2010,7 +2038,7 @@ function renderResults() {
     body.append(tr);
   });
   $("heat").replaceChildren(head, body);
-  $("res-note").textContent = !st.RR ? "Results are not in yet. They appear here when the probe and field runs finish."
+  $("res-note").textContent = !st.RR ? "Results for modules " + modulesText(st.RM) + " are not in yet. They appear here when the probe and field runs finish."
     : !fin.length ? "No runs have finished for this measure yet."
     : (isDark() ? "Brighter" : "Darker") + " cells are larger values, from " + fmtRes(m, lo) + " to " + fmtRes(m, hi) +
       ". Click a rectified cell to view its units.";
@@ -2018,8 +2046,9 @@ function renderResults() {
 }
 function renderSelected() {
   const c = st.pops.rect.code(), q = st.RX && st.RX.F.get(c.key), rows = [];
-  $("sel-title").textContent = Math.round(100 * c.f) + "% active, " + c.D + " units (" + c.n_freq + " waves)";
-  rows.push(["Kernel radius r", c.r.toFixed(2) + " cells (ideal 16)"]);
+  $("sel-title").textContent = Math.round(100 * c.f) + "% active, " + c.D + " units (" + c.n_freq + " waves), modules " + modulesText(st.RM);
+  rows.push(["Kernel radius r", c.r.toFixed(2) + " cells (unrectified ideal " + st.RM.r_ideal + ")"]);
+  rows.push(["Grid period used", (+st.RM.lambda_ref).toFixed(2) + " cells (" + (st.RM.lambdas.join("") === "111213" ? "the middle module" : "geometric mean of the modules") + ")"]);
   if (q) {
     const s = q.support, k = q.kernel, d = s.diam_over_lambda, n = s.fields_per_unit, p = q.peak20;
     rows.push(["Kernel half-width", k.half_width_inh.toFixed(1) + " cells after inhibition; ideal " + k.half_width_ideal_r16.toFixed(1)]);
@@ -2082,7 +2111,8 @@ function drawHist(q) {
     out.push(mk("line", { class: "grid", x1: x(lt), x2: x(lt), y1: H - mb, y2: H - mb + 4 }));
     out.push(mk("text", { x: x(lt), y: H - mb + 15, "text-anchor": "middle" }, String(t)));
   }
-  out.push(mk("text", { class: "axis-title", x: ml + pw / 2, y: H - 6, "text-anchor": "middle" }, "Field diameter in grid periods of 12 cells, log scale"));
+  out.push(mk("text", { class: "axis-title", x: ml + pw / 2, y: H - 6, "text-anchor": "middle" },
+    "Field diameter in grid periods of " + (+st.RM.lambda_ref).toFixed(1) + " cells, log scale"));
   const bars = [];
   for (let i = i0; i <= i1; i++) {
     const xa = x(E[i]) + 1, w = Math.max(1, x(E[i + 1]) - x(E[i]) - 2);
@@ -2159,6 +2189,30 @@ function setRect(f, D) {
   }
   renderResults();
 }
+// Another set of grid modules: load its codes and results once, then start the population over.
+async function setRectVariant(key) {
+  if (key === st.rectVar) return;
+  let V;
+  try { V = await loadRectVariant(key); }
+  catch (e) { setStatus("Could not load the codes for these modules: " + errText(e), true); $("rect-v").value = st.rectVar; return; }
+  useRectVariant(V);
+  st.pops.rect.refresh();
+  if (st.popKey === "rect") {
+    st.sel = null; st.page = 0; st.sortToken++;
+    if (st.orderPop === "rect") { st.order = null; st.orderPop = null; }
+    if (st.sort === "random") shuffleOrder();
+    updateSortNote();
+    if (SORTS[st.sort].stat) computeSort();
+    requestRender();
+  }
+  renderResults();
+  renderChecks();
+  if (!st.rectChecks[key]) {
+    await checkRect(V);
+    renderChecks();
+    if (st.popKey === "rect") renderPopHead();
+  }
+}
 function setPop(key) {
   if (!st.pops[key] || key === st.popKey) return;
   st.popKey = key; st.sel = null; st.page = 0; st.sortToken++;
@@ -2227,6 +2281,8 @@ function buildControls() {
   }));
   showBand();
   const pct = f => Math.round(100 * f) + "%";
+  $("rect-v").replaceChildren(...st.RV.map(v => { const o = document.createElement("option"); o.value = v.key; o.textContent = v.label + (v.has_results ? "" : ", results pending"); return o; }));
+  $("rect-v").value = st.rectVar;
   $("rect-f").replaceChildren(...st.RM.Fs.map(f => { const o = document.createElement("option"); o.value = String(f); o.textContent = pct(f) + " of units at each place"; return o; }));
   $("rect-D").replaceChildren(...st.RM.Ds.map(D => { const o = document.createElement("option"); o.value = String(D); o.textContent = D + " units (" + D / 2 + " waves)"; return o; }));
   $("rect-f").value = String(st.rect.f); $("rect-D").value = String(st.rect.D);
@@ -2306,6 +2362,7 @@ function wireControls() {
   $("minsize").addEventListener("change", () => { const v = parseInt($("minsize").value, 10); st.f.minSize = v > 0 ? v : 1; $("minsize").value = st.f.minSize; filtersChanged(); });
   $("sort").addEventListener("change", () => setSort($("sort").value));
   $("band").addEventListener("change", () => setBand(+$("band").value));
+  $("rect-v").addEventListener("change", () => setRectVariant($("rect-v").value));
   $("rect-f").addEventListener("change", () => setRect(+$("rect-f").value, st.rect.D));
   $("rect-D").addEventListener("change", () => setRect(st.rect.f, +$("rect-D").value));
   $("res-measure").addEventListener("change", () => { st.res.measure = $("res-measure").value; renderResults(); });
