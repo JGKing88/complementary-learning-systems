@@ -962,8 +962,10 @@ def train_navigate(
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     print(f"Agent input_dim={input_dim} init_log_std={cfg.agent.init_log_std}",
           flush=True)
-    agent = NavAgent(cfg.agent, input_dim,
-                     action_bounds=action_bounds_from(cfg.env)).to(device)
+    from .policy.memory_agent import build_agent
+    agent = build_agent(cfg, input_dim, action_bounds=action_bounds_from(cfg.env),
+                        specs=channels.channel_specs(cfg.agent, embed_dim,
+                                                     cfg.env.observation_size)).to(device)
 
     if load_checkpoint is not None:
         ck = torch.load(load_checkpoint, map_location=device, weights_only=False)
@@ -1140,6 +1142,9 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "input_memory_conf": ("agent.input_memory_conf",),
     "recurrent_memory_checkpoint": ("agent.recurrent_memory_checkpoint",),
     "recurrent_c_scale": ("agent.recurrent_c_scale",),
+    "trainable_memory": ("agent.trainable_memory",),
+    "trainable_memory_init": ("agent.trainable_memory_init",),
+    "trainable_memory_hidden": ("agent.trainable_memory_hidden",),
     "input_grid_code": ("agent.input_grid_code",),
     "aux_goal_weight": ("agent.aux_goal_weight",),
     "aux_disp_weight": ("agent.aux_disp_weight",),
@@ -1389,6 +1394,14 @@ def build_parser() -> argparse.ArgumentParser:
                         "sensory_kv's table; lifetime stages, one memory per lifetime.")
     p.add_argument("--recurrent_c_scale", type=float, default=0.5,
                    help="Idea 4: c fed to the policy = sigmoid(memory logit) times this.")
+    p.add_argument("--trainable_memory", action=argparse.BooleanOptionalAction, default=False,
+                   help="Idea 4 trained by RL (§7b.15 arms 3, 4): the recurrent memory inside "
+                        "the policy (policy/memory_agent.py), trained by PPO, no memory loss; "
+                        "with --memory_backend sensory_kv and lifetime stages.")
+    p.add_argument("--trainable_memory_init", default="",
+                   help="Idea 4 RL: start the memory from this memory.pt (arm 4); empty = random.")
+    p.add_argument("--trainable_memory_hidden", type=int, default=1024,
+                   help="Idea 4 RL: the memory LSTM's width.")
     p.add_argument("--hopfield_storage_rule", choices=["hebb", "proj"], default="hebb",
                    help="Hopfield storage rule: hebb (default) or proj, the projection rule (stored patterns are exact fixed points, no cross-talk). hopfield/core.py.")
     p.add_argument("--movement_mode", default="continuous")
@@ -2042,19 +2055,28 @@ def main():
         if cfg.agent.aux_disp_weight <= 0:
             p.error("sup=1 stages need --aux_disp_weight > 0 (the displacement "
                     "head carries the dense goal signal)")
-    idea4 = bool(getattr(cfg.agent, "recurrent_memory_checkpoint", ""))
+    trainable4 = bool(getattr(cfg.agent, "trainable_memory", False))
+    if trainable4 and getattr(cfg.agent, "recurrent_memory_checkpoint", ""):
+        p.error("--trainable_memory and --recurrent_memory_checkpoint are two arms; "
+                "use --trainable_memory_init to start a trainable memory from a checkpoint")
+    idea4 = bool(getattr(cfg.agent, "recurrent_memory_checkpoint", "")) or trainable4
     if idea4 and not memory_backend.is_kv(cfg):
-        p.error("--recurrent_memory_checkpoint stands in for sensory_kv's table "
+        p.error("idea 4's memory stands in for sensory_kv's table "
                 "(--memory_backend sensory_kv)")
     if idea4 and kinds - {"lifetime"}:
-        p.error("--recurrent_memory_checkpoint runs lifetime stages only "
+        p.error("idea 4's memory runs lifetime stages only "
                 "(one memory per lifetime, GRID_MLP_NAV_PLAN §7b.15)")
+    if trainable4 and (cfg.agent.hopfield_mode != "continuous"
+                       or not cfg.agent.input_hopfield_signal
+                       or not cfg.agent.input_memory_conf):
+        p.error("--trainable_memory fills the continuous d slot and the c slot "
+                "(hopfield_mode continuous, input_hopfield_signal, input_memory_conf)")
     if "lifetime" in kinds:
         # Idea 3, stage 2: the recurrent state is the only memory there is.
         # Idea 4: one recurrent memory bank per lifetime (rollout/lifetime.py).
         if not (memory_backend.is_none(cfg) or idea4):
             p.error("lifetime stages are idea 3's (--memory_backend none) or "
-                    "idea 4's (--recurrent_memory_checkpoint)")
+                    "idea 4's (--recurrent_memory_checkpoint, --trainable_memory)")
         too_many = [st.envs for st in stages
                     if st.kind == "lifetime" and (st.envs or 2) > cfg.envs_per_world]
         if too_many:

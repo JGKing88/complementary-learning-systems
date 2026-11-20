@@ -33,6 +33,13 @@ from dataclasses import dataclass
 import torch
 
 from ..config import AgentConfig
+from ..world.env import PANORAMA_BINS
+
+# Idea 4's memory input (policy/memory_agent.py): the view on the
+# direction-aligned canvas (values + mask, plastic.canvas), the agent's own
+# grid phases (3 modules x 2 axes x cos, sin) and the oracle store flag.
+MEMORY_CANVAS_WIDTH = 2 * PANORAMA_BINS
+MEMORY_INPUT_WIDTH = MEMORY_CANVAS_WIDTH + 12 + 1
 
 
 @dataclass(frozen=True)
@@ -110,6 +117,11 @@ def channel_specs(
             raise ValueError("input_grid_code needs grid_code_dim (set at "
                              "startup from the scaffold's lambdas)")
         specs.append(ChannelSpec("grid_code", int(cfg.grid_code_dim)))
+    if getattr(cfg, "trainable_memory", False):
+        # Idea 4 trained by RL (policy/memory_agent.py): what its memory reads
+        # each step -- view canvas, own grid phases, oracle store flag. The
+        # agent consumes it and fills hopfield_signal and memory_conf itself.
+        specs.append(ChannelSpec("memory_input", MEMORY_INPUT_WIDTH))
     return specs
 
 

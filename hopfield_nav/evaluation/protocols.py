@@ -141,17 +141,20 @@ def run_mini_episode(
 
     for step in range(max_steps):
         at_g = at_goal(env)
+        # Idea 4's memory writes inside the read, so it must know before
+        # agent_step whether this step's oracle store fires: the frozen memory
+        # (memory/recurrent_goal.py) through set_store_flag, the one inside an
+        # agent (policy/memory_agent.py) through agent_step. Others ignore it.
+        pre_allow = allow_store and not (lock_store_after_goal and goal_in_mem[local_idx])
+        pre_flag = bool(at_g) and pre_allow and oracle_store_at_goal
         if hasattr(hopfield, "set_store_flag"):
-            # Idea 4's recurrent memory (memory/recurrent_goal.py) writes
-            # inside the read, so it must know before agent_step whether this
-            # step's oracle store fires. Other memories have no such method.
-            pre_allow = allow_store and not (lock_store_after_goal and goal_in_mem[local_idx])
-            hopfield.set_store_flag(bool(at_g) and pre_allow and oracle_store_at_goal)
+            hopfield.set_store_flag(pre_flag)
         out = agent_step(
             agent, env, env_offset, vectorhash, hopfield,
             h_rnn, cfg, device, deterministic=deterministic,
             goal_local=goal, goal_in_memory=goal_in_mem[local_idx],
             prev_reward=prev_reward, prev_action=prev_action,
+            memory_store_flag=pre_flag,
         )
         h_rnn = out["h_rnn"]
         prev_reward = out["next_prev_reward"]

@@ -611,7 +611,8 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     # Idea 4 (GRID_MLP_NAV_PLAN §7b.15): its memory exists only inside a
     # lifetime (rollout/lifetime.py), so only evaluate_lifetime reads it; the
     # nav, expl and task evaluators would build idea 1's table instead.
-    idea4 = bool(getattr(cfg.agent, "recurrent_memory_checkpoint", ""))
+    idea4 = (bool(getattr(cfg.agent, "recurrent_memory_checkpoint", ""))
+             or bool(getattr(cfg.agent, "trainable_memory", False)))
     if no_memory or idea4:
         dist = [0]
     expl_only = scope == "expl"

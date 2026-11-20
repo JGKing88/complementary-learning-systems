@@ -311,7 +311,11 @@ def run_sequential(
     # never-reset memory, as a sensory key-value store.
     # memory_backend='none' (idea 3, GRID_MLP_NAV_PLAN §7.3): no memory at
     # all; the recurrent state is carried through every mini-episode instead.
-    carry = {"h": None} if memory_backend.is_none(cfg) else None
+    # Idea 4 (plan §7b.15): trained through lifetimes whose recurrent state runs
+    # through every trial (rollout/lifetime.py), so it is evaluated that way too.
+    idea4 = (bool(getattr(cfg.agent, "recurrent_memory_checkpoint", ""))
+             or bool(getattr(cfg.agent, "trainable_memory", False)))
+    carry = {"h": None} if (memory_backend.is_none(cfg) or idea4) else None
     if store_trainer is not None and carry is not None:
         raise ValueError("idea 3 has no store head to train")
     # memory_factory (--recurrent_memory, plan §7b.14): idea 4's trained
@@ -617,6 +621,11 @@ def main() -> None:
         print(f"[agenthash] train_store=True  lr={args.train_store_lr}  "
               f"updates_per_rollout={args.train_store_updates_per_rollout}")
     memory_factory = None
+    # A controller trained around a frozen idea 4 memory (plan §7b.15) names
+    # it in its config; --recurrent_memory overrides it.
+    if not args.recurrent_memory and getattr(cfg.agent, "recurrent_memory_checkpoint", ""):
+        args.recurrent_memory = cfg.agent.recurrent_memory_checkpoint
+        args.recurrent_c_scale = float(getattr(cfg.agent, "recurrent_c_scale", 0.5))
     if args.recurrent_memory:
         if not memory_backend.is_kv(cfg):
             raise SystemExit("--recurrent_memory replaces an idea 1 checkpoint's sensory "

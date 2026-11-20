@@ -327,6 +327,16 @@ class AgentConfig:
     # (memory/recurrent_goal.py). c = sigmoid(logit) * recurrent_c_scale.
     recurrent_memory_checkpoint: str = ""
     recurrent_c_scale: float = 0.5
+    # Idea 4 trained by RL (§7b.15 arms 3 and 4): the recurrent memory inside
+    # the policy (policy/memory_agent.py), trained by PPO through the agent's
+    # own lifetimes with no supervised memory loss. It reads the memory_input
+    # channel (view canvas, own grid phases, oracle store flag) and fills idea
+    # 1's d and c slots, so it needs memory_backend "sensory_kv" and lifetime
+    # stages. trainable_memory_init: a memory.pt to start from (arm 4); empty
+    # = random weights (arm 3).
+    trainable_memory: bool = False
+    trainable_memory_init: str = ""
+    trainable_memory_hidden: int = 1024
     # memory_backend "none" is idea 3 (GRID_MLP_NAV_PLAN §7): no memory
     # module, so the GRU's hidden state is the only place a goal can live, and
     # every path that would keep a memory across visits keeps the hidden

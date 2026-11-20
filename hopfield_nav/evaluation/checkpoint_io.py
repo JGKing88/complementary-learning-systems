@@ -352,8 +352,11 @@ def load_agent(
     init seed the RNG before calling: nothing here consumes it.
     """
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
-    agent = NavAgent(cfg.agent, input_dim,
-                     action_bounds=action_bounds_from(cfg.env)).to(device)
+    from ..policy import channels as _channels
+    from ..policy.memory_agent import build_agent
+    agent = build_agent(cfg, input_dim, action_bounds=action_bounds_from(cfg.env),
+                        specs=_channels.channel_specs(cfg.agent, embed_dim,
+                                                      cfg.env.observation_size)).to(device)
     if state_dict is not None:
         agent.load_state_dict(state_dict)
     if eval_mode:

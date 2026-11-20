@@ -2031,6 +2031,17 @@ case "$VARIANT" in
                   RECURRENT_MEMORY_CHECKPOINT=${I4_MEMORY:?set I4_MEMORY to an idea 4 memory.pt}
                   N_TRAIN_DISTRACTORS_MIN=0; N_TRAIN_DISTRACTORS_MAX=0
                   _rest="${_rest#_i4}" ;;
+            _rl4*) # Idea 4 trained by RL (§7b.15 arm 3): with _gmlp and _life,
+                  # the memory inside the policy, random weights, trained by PPO.
+                  TRAINABLE_MEMORY=1; TRAINABLE_MEMORY_HIDDEN=${I4_RL_HIDDEN:-1024}
+                  N_TRAIN_DISTRACTORS_MIN=0; N_TRAIN_DISTRACTORS_MAX=0
+                  _rest="${_rest#_rl4}" ;;
+            _ft4*) # Idea 4, supervised memory unfrozen under PPO (§7b.15 arm 4):
+                  # starts from I4_MEMORY (its width).
+                  TRAINABLE_MEMORY=1; TRAINABLE_MEMORY_INIT=${I4_MEMORY:?set I4_MEMORY}
+                  TRAINABLE_MEMORY_HIDDEN=${I4_RL_HIDDEN:-2048}
+                  N_TRAIN_DISTRACTORS_MIN=0; N_TRAIN_DISTRACTORS_MAX=0
+                  _rest="${_rest#_ft4}" ;;
             _rp*) ENV_GENERATOR=1; REFRESH_PLACE=${REFRESH_PLACE:-1}
                   PLACE_REGION=${PLACE_REGION:-anywhere}; PLACE_MARGIN=${PLACE_MARGIN:-80}
                   REFRESH_GOAL=${REFRESH_GOAL:-1}; REDRAW_GOAL_PER_ROLLOUT=""

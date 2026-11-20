@@ -135,6 +135,9 @@ class RolloutCollector:
         # `hopfields[b]` or use one object for the whole batch. Whether a write
         # is *permitted* is `allow_store`, declared by the caller.
         shared_hopfield = not isinstance(hopfields, list)
+        # Idea 4 trained by RL (policy/memory_agent.py): the memory is inside
+        # the agent; the collector only feeds it (memory_input channel).
+        trainable_memory = bool(getattr(agent, "has_trainable_memory", False))
         if allow_store and shared_hopfield:
             raise ValueError(
                 "allow_store=True needs one Hopfield per trajectory: with a "
@@ -413,7 +416,22 @@ class RolloutCollector:
                     recompute_mask = invalidated_envs.copy()
                 invalidated_envs[:] = False
 
-                if self.no_memory:
+                if trainable_memory:
+                    # Idea 4 trained by RL (policy/memory_agent.py): the agent
+                    # runs its own memory on the memory_input channel and fills
+                    # d and c itself, so those slots are placeholders here. The
+                    # oracle store flag goes in with this step, by step 7's rule.
+                    in_explore_pre = cfg.explore_steps is None or t < cfg.explore_steps
+                    store_now = ((auto_store_active & at_goal_mask) & ~agent_goal_store_fired
+                                 if (allow_store and in_explore_pre)
+                                 else np.zeros(B, dtype=bool))
+                    mem_input_np = self._memory_input(vec, positions, env_offset, store_now)
+                    q_full = np.zeros((B, 2), dtype=np.float32)
+                    memory_mask = np.zeros(B, dtype=bool)
+                    memory_conf = np.zeros(B, dtype=np.float32)
+                    hopfield_signal = torch.zeros(B, signal_dim, device=self.device)
+                    new_W, chart_np, multistep_q = None, None, {}
+                elif self.no_memory:
                     # Nothing to read. q is zero so the diagnostics' cos(a, q)
                     # stays undefined rather than inventing a direction.
                     q_full = np.zeros((B, 2), dtype=np.float32)
@@ -680,6 +698,8 @@ class RolloutCollector:
                 if self.memory_readout is not None:
                     values["memory_conf"] = torch.from_numpy(
                         memory_conf).float().to(self.device).unsqueeze(-1)
+                if trainable_memory:
+                    values["memory_input"] = torch.from_numpy(mem_input_np).to(self.device)
                 if self.grid_code is not None:
                     values["grid_code"] = torch.from_numpy(
                         self.grid_code.at_local(positions, env_offset)).to(self.device)
@@ -783,8 +803,8 @@ class RolloutCollector:
                 # would claim "goal in memory" without actually storing it).
                 if allow_store and in_explore:
                     agent_goal_store_fired |= (effective_store & at_goal_mask)
-                    if self.memory_readout is not None and not getattr(
-                            hopfields, "is_recurrent_goal_bank", False):
+                    if (self.memory_readout is not None and not trainable_memory
+                            and not getattr(hopfields, "is_recurrent_goal_bank", False)):
                         # The oracle store: (four-heading view at the goal,
                         # the goal's grid code) -- the goal CELL, as the
                         # Hopfield path's allow_offcell_store=False does.
@@ -1078,7 +1098,12 @@ class RolloutCollector:
                     pos_final, getattr(cfg.hopfield, 'alias_mod', 0)),
                 env_offset)
             emb_final = torch.from_numpy(emb_final_np).float().to(self.device)
-            if self.no_memory:
+            if trainable_memory:
+                q_final = np.zeros((B, 2), dtype=np.float32)
+                sig_final = torch.zeros(B, signal_dim, device=self.device)
+                conf_final = np.zeros(B, dtype=np.float32)
+                multistep_q_final = {}
+            elif self.no_memory:
                 q_final = np.zeros((B, 2), dtype=np.float32)
                 sig_final = torch.zeros(B, signal_dim, device=self.device)
                 multistep_q_final = {}
@@ -1128,6 +1153,11 @@ class RolloutCollector:
             if self.memory_readout is not None:
                 values_final["memory_conf"] = torch.from_numpy(
                     conf_final).float().to(self.device).unsqueeze(-1)
+            if trainable_memory:
+                # Only for the bootstrap value; the state this forward returns
+                # is discarded, so the memory does not step.
+                values_final["memory_input"] = torch.from_numpy(self._memory_input(
+                    vec, pos_final, env_offset, np.zeros(B, dtype=bool))).to(self.device)
             if self.grid_code is not None:
                 values_final["grid_code"] = torch.from_numpy(
                     self.grid_code.at_local(pos_final, env_offset)).to(self.device)
@@ -1203,6 +1233,19 @@ class RolloutCollector:
     # the same code instead of its own B=1 reimplementation. They stay as thin
     # methods because the call sites read better with the collector's state
     # (cfg, vectorhash, device, embed_dim) supplied implicitly.
+
+    def _memory_input(self, vec, positions, env_offset, store_flag) -> np.ndarray:
+        """Idea 4's memory input (policy/memory_agent.py), (B, 373) float32:
+        the view on the direction-aligned canvas at the heading it was cast
+        at, the agent's own grid phases, and the oracle store flag."""
+        from ..memory.plastic import canvas, goal_phases
+        positions = np.asarray(positions).reshape(-1, 2)
+        own = goal_phases(positions[:, 0] + int(env_offset[0]),
+                          positions[:, 1] + int(env_offset[1]),
+                          self.cfg.vectorhash.lambdas)
+        canv = canvas(vec.obs_batch(), obs_psi(vec, None))
+        flag = np.asarray(store_flag, dtype=np.float32).reshape(-1, 1)
+        return np.concatenate([canv, own, flag], axis=1).astype(np.float32)
 
     def _hopfield_signal_at(
         self,

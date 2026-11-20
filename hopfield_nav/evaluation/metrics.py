@@ -71,8 +71,13 @@ def agent_step(
     prev_reward: torch.Tensor | None = None,
     prev_action: torch.Tensor | None = None,
     action_temperature: float = 1.0,
+    memory_store_flag: bool = False,
 ) -> dict:
     """Run one agent step. Env owns all position/movement state.
+
+    ``memory_store_flag``: for an agent with idea 4's memory inside it
+    (``policy/memory_agent.py``), whether this step's oracle store fires; the
+    write happens inside the step, so the caller decides it beforehand.
 
     If ``cfg.hopfield_oracle`` is set, ``goal_in_memory`` is True, the
     Hopfield has at least one memory, and ``goal_local`` is the env goal,
@@ -141,7 +146,22 @@ def agent_step(
     _chart = None
     q = np.zeros((1, 2), dtype=np.float32)       # q_magnitude when no recall
     kv_conf = None
-    if memory_backend.is_kv(cfg):
+    _mem_in = None
+    if getattr(agent, "has_trainable_memory", False):
+        # Idea 4 trained by RL: the agent runs its own memory on what it reads
+        # here (view canvas at its heading, own grid phases, the store flag)
+        # and fills d and c itself; their slots are placeholders.
+        from ..memory.plastic import canvas as _canvas, goal_phases as _goal_phases
+        _psi = env._obs_heading()
+        _own = _goal_phases([pos_tuple[0] + int(env_offset[0])],
+                            [pos_tuple[1] + int(env_offset[1])], cfg.vectorhash.lambdas)
+        _mem_in = np.concatenate(
+            [_canvas(env.obs_at(pos_tuple, _psi)[None, :], np.array([_psi])), _own,
+             np.array([[1.0 if memory_store_flag else 0.0]])], axis=1).astype(np.float32)
+        hop_signal = torch.zeros(1, signal_dim, device=device)
+        kv_conf = np.zeros(1, dtype=np.float32)
+        store_embeddings = [None]
+    elif memory_backend.is_kv(cfg):
         # Sensory-keyed recall + grid MLP, as in the rollout collector: d on
         # the hopfield_signal slot, c on memory_conf. The query is the view
         # the agent sees, at the heading it was cast at.
@@ -205,6 +225,8 @@ def agent_step(
     if kv_conf is not None:
         values["memory_conf"] = torch.from_numpy(
             kv_conf).float().to(device).unsqueeze(-1)
+    if _mem_in is not None:
+        values["memory_input"] = torch.from_numpy(_mem_in).to(device)
     if getattr(cfg.agent, "input_grid_code", False):
         values["grid_code"] = torch.from_numpy(
             memory_backend.grid_code_for(cfg).at_local(pos_arr, env_offset)).to(device)
