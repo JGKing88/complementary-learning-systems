@@ -46,6 +46,10 @@ class GridMemoryReadout:
 
     def signal(self, memories, views, psi, positions, env_offset):
         """Returns ``(channel (B,2), q (B,2), has_memory (B,), c (B,))``."""
+        if memories and getattr(memories[0], "is_recurrent_goal_memory", False):
+            # Idea 4's trained recurrent memory (recurrent_goal.py, plan §7b.14).
+            from .recurrent_goal import recurrent_signal
+            return recurrent_signal(self, memories, views, psi, positions, env_offset)
         g_goal, c, has = read_batch(memories, views, psi, self.grid_code.Ng)
         d = np.zeros((len(memories), 2), dtype=np.float32)
         if has.any():

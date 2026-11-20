@@ -291,6 +291,7 @@ def run_sequential(
     store_trainer: "_StoreTrainer | None" = None,
     train_store_updates_per_rollout: int = 1,
     steer: dict | None = None,
+    memory_factory=None,
 ) -> tuple[
     list[tuple[int, int, dict[int, dict]]],
     list[tuple[int, int, int]],
@@ -313,7 +314,10 @@ def run_sequential(
     carry = {"h": None} if memory_backend.is_none(cfg) else None
     if store_trainer is not None and carry is not None:
         raise ValueError("idea 3 has no store head to train")
-    hopfield = (None if carry is not None else
+    # memory_factory (--recurrent_memory, plan §7b.14): idea 4's trained
+    # recurrent memory in place of idea 1's table, read by the same controller.
+    hopfield = (memory_factory() if memory_factory is not None else
+                None if carry is not None else
                 memory_backend.kv_memory_with(cfg, [])
                 if memory_backend.is_kv(cfg) else
                 Hopfield(embed_dim, beta=cfg.hopfield.beta,
@@ -483,6 +487,12 @@ def main() -> None:
                    help="BCE updates after each mini-episode (rollout). "
                         "Batch is the just-finished episode's per-step "
                         "(features, at_goal) pairs.")
+    p.add_argument("--recurrent_memory", default=None,
+                   help="idea 4's trained memory (a train_protocol / train_experience "
+                        "memory.pt) in place of an idea 1 checkpoint's sensory key-value "
+                        "table (plan §7b.14); needs --oracle_store_at_goal")
+    p.add_argument("--recurrent_c_scale", type=float, default=0.5,
+                   help="c fed to the controller = sigmoid(logit) times this")
     p.add_argument("--goal_radius", type=float, default=None,
                    help="Override EnvConfig.goal_radius from the saved checkpoint. "
                         "Default: use the value saved at training time (or 0.5 for "
@@ -595,6 +605,23 @@ def main() -> None:
     if args.train_store:
         print(f"[agenthash] train_store=True  lr={args.train_store_lr}  "
               f"updates_per_rollout={args.train_store_updates_per_rollout}")
+    memory_factory = None
+    if args.recurrent_memory:
+        if not memory_backend.is_kv(cfg):
+            raise SystemExit("--recurrent_memory replaces an idea 1 checkpoint's sensory "
+                             "key-value table; this checkpoint's memory_backend is "
+                             f"{cfg.agent.memory_backend!r}")
+        if not args.oracle_store_at_goal or args.train_store:
+            raise SystemExit("--recurrent_memory writes only through the oracle store "
+                             "(--oracle_store_at_goal, no --train_store)")
+        from hopfield_nav.memory.recurrent_goal import RecurrentGoalMemory
+
+        def memory_factory():
+            return RecurrentGoalMemory(args.recurrent_memory, device=device,
+                                       arena_size=cfg.env.size,
+                                       c_scale=args.recurrent_c_scale)
+        print(f"[agenthash] recurrent_memory={args.recurrent_memory}  "
+              f"c_scale={args.recurrent_c_scale}")
 
     iter_traces: list[tuple[list, list]] = []
     iter_env_goals: list[list[list[int]]] = []
@@ -657,6 +684,7 @@ def main() -> None:
             store_trainer=store_trainer,
             train_store_updates_per_rollout=args.train_store_updates_per_rollout,
             steer=steer,
+            memory_factory=memory_factory,
         )
         iter_traces.append((trace, blocks))
         iter_env_goals.append([list(env.goal_location) for env in val_envs])
