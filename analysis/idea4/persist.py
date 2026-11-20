@@ -35,6 +35,7 @@ import torch
 
 from analysis.idea2.lifetimes import SIZE, EnvPool
 from analysis.idea4 import train_experience as te
+from analysis.idea4 import motion as mo
 from analysis.idea4.gpu_views import GpuPool, headings, place
 
 
@@ -59,7 +60,8 @@ def toward(start, goal, gen):
 
 
 @torch.no_grad()
-def run(model, gp, a, A, iters, B, seed, device, tail=False, search_steps=None):
+def run(model, gp, a, A, iters, B, seed, device, tail=False, search_steps=None,
+        motion="grid", p_wander=0.0, wander_max=0):
     g = torch.Generator(device=device).manual_seed(seed)
     sa = a                                      # the search walk's settings
     if search_steps:
@@ -82,7 +84,12 @@ def run(model, gp, a, A, iters, B, seed, device, tail=False, search_steps=None):
         for it in range(iters):
             for j in range(i + 1):
                 if j == i and it == 0:                       # the search, with the store
-                    path, psi, first, found = te.visit_path(goal[:, j], sa, device, g)
+                    if motion == "continuous":               # agent-like (motion.py)
+                        path, psi, ns = mo.search(goal[:, j], SIZE, g)
+                        tt = torch.arange(len(path), device=device)[:, None]
+                        first, found = tt == ns[None], tt >= ns[None]
+                    else:
+                        path, psi, first, found = te.visit_path(goal[:, j], sa, device, g)
                     act = torch.ones_like(first) if tail else (~found | first)
                     cpre = torch.zeros(B, device=device)
                     npre = torch.zeros(B, device=device)
@@ -96,10 +103,14 @@ def run(model, gp, a, A, iters, B, seed, device, tail=False, search_steps=None):
                                      c_pre=float((cpre.sum() / npre.sum().clamp(min=1)).cpu()),
                                      len_pre=float(npre.mean().cpu())))
                     continue
-                start = torch.randint(0, SIZE, (B, 2),
-                                      device=device, generator=g)
-                path, n = toward(start, goal[:, j], g)
-                psi = headings(path, device, g)
+                if motion == "continuous":
+                    path, psi, n = mo.revisit(goal[:, j], SIZE, g, wander_max=wander_max,
+                                              p_wander=p_wander)
+                else:
+                    start = torch.randint(0, SIZE, (B, 2),
+                                          device=device, generator=g)
+                    path, n = toward(start, goal[:, j], g)
+                    psi = headings(path, device, g)
                 ok = torch.zeros(B, device=device)
                 cnt = torch.zeros(B, device=device)
                 nok = torch.zeros(B, device=device)
@@ -163,6 +174,12 @@ def main():
     p.add_argument("--search_steps", type=int, default=None,
                    help="length of the search walk (default: the checkpoint's visit_steps); "
                         "the agent searches for up to 200 steps")
+    p.add_argument("--motion", default="grid", choices=["grid", "continuous"],
+                   help="grid: one-cell moves along an axis (training walks); continuous: the "
+                        "agent's unit steps in any direction snapped to cells (motion.py)")
+    p.add_argument("--p_wander", type=float, default=0.0,
+                   help="continuous: chance a revisit detours before approaching")
+    p.add_argument("--wander_max", type=int, default=0, help="continuous: longest detour")
     p.add_argument("--device", default="cuda")
     p.add_argument("--out", default=None)
     c = p.parse_args()
@@ -181,7 +198,7 @@ def main():
         model.eval()
         t0 = time.time()
         rows, steps = run(model, gp, a, c.arenas, c.iters, c.lifetimes, c.seed, device, c.tail,
-                          c.search_steps)
+                          c.search_steps, c.motion, c.p_wander, c.wander_max)
         s = summary(rows, c.arenas, c.iters)
         print(f"\n{path}  step {ck['step']}  {c.arenas} arenas x {c.iters} iterations, "
               f"{steps} memory steps per lifetime ({time.time() - t0:.0f}s)")
@@ -192,7 +209,8 @@ def main():
                   f"| c {r['c_mean']:.2f} | near reads {r['acc_near']:.2f} | c in search "
                   f"before arrival {r['c_search']:.2f}", flush=True)
         res.append(dict(ckpt=path, step=ck["step"], arenas=c.arenas, iters=c.iters,
-                        tail=c.tail, memory_steps=steps, summary=s, rows=rows))
+                        tail=c.tail, motion=c.motion, p_wander=c.p_wander, wander_max=c.wander_max,
+                        memory_steps=steps, summary=s, rows=rows))
     if c.out:
         with open(c.out, "w") as f:
             json.dump(res, f, indent=1)

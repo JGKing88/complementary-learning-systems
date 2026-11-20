@@ -40,6 +40,7 @@ import torch
 import torch.nn.functional as F
 
 from analysis.idea2.lifetimes import SIZE, EnvPool
+from analysis.idea4 import motion as mo
 from analysis.idea4 import train_experience as te
 from analysis.idea4.gpu_views import GpuPool, headings, place
 from analysis.idea4.persist import run as persist_run, summary as persist_summary, toward
@@ -58,16 +59,26 @@ def schedule(a, goal, A, iters, B, device, gen):
         for it in range(iters):
             for j in range(i + 1):
                 if j == i and it == 0:                       # the search, storing at the arrival
-                    path, psi, first, found = te.visit_path(goal[:, j], a, device, gen)
+                    if a.motion == "continuous":             # agent-like (motion.py)
+                        path, psi, ns = mo.search(goal[:, j], SIZE, gen,
+                                                  wander_max=a.search_wander_max)
+                        tt = torch.arange(len(path), device=device)[:, None]
+                        first, found = tt == ns[None], tt >= ns[None]
+                    else:
+                        path, psi, first, found = te.visit_path(goal[:, j], a, device, gen)
                     act = ~found | first
                     for t in range(len(path)):
                         yield dict(j=j, pos=path[t], psi=psi[t], flag=first[t].float(),
                                    active=act[t], pw=zeros, ct=found[t].float(),
                                    cw=act[t].float(), last=last)
                     continue
-                start = torch.randint(0, SIZE, (B, 2), device=device, generator=gen)
-                path, n = toward(start, goal[:, j], gen)
-                psi = headings(path, device, gen)
+                if a.motion == "continuous":
+                    path, psi, n = mo.revisit(goal[:, j], SIZE, gen, wander_max=a.wander_max,
+                                              p_wander=a.p_wander)
+                else:
+                    start = torch.randint(0, SIZE, (B, 2), device=device, generator=gen)
+                    path, n = toward(start, goal[:, j], gen)
+                    psi = headings(path, device, gen)
                 for t in range(len(path)):
                     act = t <= n
                     far = te.far_from(path[t], goal[:, j]) & act
@@ -93,6 +104,14 @@ def main():
     p.add_argument("--tau_min", type=int, default=5)
     p.add_argument("--tau_tail", type=int, default=5)
     p.add_argument("--iters", type=int, default=10, help="iterations per block in training")
+    p.add_argument("--motion", default="grid", choices=["grid", "continuous"],
+                   help="grid: one-cell moves along an axis; continuous: the agent's unit steps "
+                        "in any direction snapped to cells, searches that wander first, revisits "
+                        "that sometimes detour (motion.py)")
+    p.add_argument("--search_wander_max", type=int, default=60)
+    p.add_argument("--wander_max", type=int, default=40, help="continuous: longest revisit detour")
+    p.add_argument("--p_wander", type=float, default=0.3,
+                   help="continuous: chance a revisit detours before approaching")
     p.add_argument("--A_min", type=int, default=2)
     p.add_argument("--A_max", type=int, default=6)
     p.add_argument("--curriculum", action="store_true")
@@ -156,7 +175,8 @@ def main():
     def evaluate():
         model.eval()
         rows, steps = persist_run(model, gp_eval, a, a.eval_arenas, a.eval_iters,
-                                  a.eval_lifetimes, 10_000, device)
+                                  a.eval_lifetimes, 10_000, device,
+                                  motion=getattr(a, "motion", "grid"))
         s = persist_summary(rows, a.eval_arenas, a.eval_iters)
         model.train()
         lastb = s[a.eval_arenas - 1]
