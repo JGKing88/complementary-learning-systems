@@ -2105,6 +2105,31 @@ number of arenas, gated as §7b.11's strict gate on the reads of the last
 block. Fewer iterations per block in training than the protocol's 40;
 tested with `persist.py` at 40.
 
+Stage 2 interim (2026-11-19, update 10k). Two LSTM 2048 runs
+(`protocol_h2048_{ft,scratch}_s0`, commit 852e4fb, jobs 29681505 and
+29681509 onward, 10 iterations per block, lr 3e-4, 50k updates planned):
+`ft` starts from the strict-gate LSTM 2048 weights, `scratch` from
+random weights.
+- Protocol training fixes how long goals last. The trained goals now last
+  the full 11,700-step protocol, where stage 1's faded within about 1,000.
+  The `ft` memory keeps the first goal at 0.91 to 0.96 and the newest at
+  0.75 to 0.83 in the last block of every test from update 2k to 10k.
+- It does not fix capacity. The `ft` curriculum reached 3 arenas at update
+  144, 4 at 495 and 5 at 7,494. In five tests (updates 2k to 10k) the last
+  block holds about 2.8 goals: arenas 0, 1 and the newest, with arenas 2 to
+  4 at 0.03 to 0.27.
+- The test's length is not the cause. At update 10k the last block holds
+  3.1 goals at 10 iterations per block (the training length), 3.2 at 20
+  and 2.8 at 40 (copy at `.../idea4/persist/protocol_ft_snapshot.pt`,
+  results `protocol_ft_snapshot_i{10,20,40}.json`).
+- `scratch` learned to store at about update 3k and was still at 2 arenas
+  at 8k (block 0 0.81, block 1 0.64).
+
+So far the protocol-trained memory holds about 3 goals through the
+6-arena protocol, the first two and the newest, short of the 6 an agent
+would need. The agent backend (stage 3) waits until the memory holds
+every arena at 0.8 or better.
+
 ## 8. Decisions and open items
 
 | | |
