@@ -59,8 +59,12 @@ def toward(start, goal, gen):
 
 
 @torch.no_grad()
-def run(model, gp, a, A, iters, B, seed, device, tail=False):
+def run(model, gp, a, A, iters, B, seed, device, tail=False, search_steps=None):
     g = torch.Generator(device=device).manual_seed(seed)
+    sa = a                                      # the search walk's settings
+    if search_steps:
+        sa = types.SimpleNamespace(**vars(a))
+        sa.visit_steps = int(search_steps)
     env = torch.rand(B, len(gp), device=device, generator=g).argsort(1)[:, :A]
     off, goal, _ = place(B, A, device, g)
     h = model.init_state(B, device)
@@ -78,11 +82,19 @@ def run(model, gp, a, A, iters, B, seed, device, tail=False):
         for it in range(iters):
             for j in range(i + 1):
                 if j == i and it == 0:                       # the search, with the store
-                    path, psi, first, found = te.visit_path(goal[:, j], a, device, g)
+                    path, psi, first, found = te.visit_path(goal[:, j], sa, device, g)
                     act = torch.ones_like(first) if tail else (~found | first)
+                    cpre = torch.zeros(B, device=device)
+                    npre = torch.zeros(B, device=device)
                     for t in range(len(path)):
-                        _, _, h = step(h, j, path[t], psi[t], first[t], act[t])
+                        _, c, h = step(h, j, path[t], psi[t], first[t], act[t])
+                        pre = act[t] & ~found[t]             # before the arrival: goal unknown
+                        cpre += torch.sigmoid(c) * pre
+                        npre += pre.float()
                     steps += int(act.sum(0).float().mean())
+                    rows.append(dict(kind="search", block=i, iter=it, arena=j, step=steps,
+                                     c_pre=float((cpre.sum() / npre.sum().clamp(min=1)).cpu()),
+                                     len_pre=float(npre.mean().cpu())))
                     continue
                 start = torch.randint(0, SIZE, (B, 2),
                                       device=device, generator=g)
@@ -90,6 +102,8 @@ def run(model, gp, a, A, iters, B, seed, device, tail=False):
                 psi = headings(path, device, g)
                 ok = torch.zeros(B, device=device)
                 cnt = torch.zeros(B, device=device)
+                nok = torch.zeros(B, device=device)
+                ncnt = torch.zeros(B, device=device)
                 first_ok = torch.full((B,), float("nan"), device=device)
                 csum = torch.zeros(B, device=device)
                 for t in range(len(path)):
@@ -100,12 +114,16 @@ def run(model, gp, a, A, iters, B, seed, device, tail=False):
                     hit = te._hits(ph[:, None], off[:, j], goal[:, j])
                     ok += hit * far
                     cnt += far.float()
+                    near = active & ~far
+                    nok += hit * near
+                    ncnt += near.float()
                     csum += torch.sigmoid(c) * active
                     if t == 0:
                         first_ok = torch.where(far, hit, first_ok)
                 steps += int((n + 1).float().mean())
-                rows.append(dict(block=i, iter=it, arena=j, step=steps,
+                rows.append(dict(kind="revisit", block=i, iter=it, arena=j, step=steps,
                                  acc=float((ok.sum() / cnt.sum().clamp(min=1)).cpu()),
+                                 acc_near=float((nok.sum() / ncnt.sum().clamp(min=1)).cpu()),
                                  acc_first=float(np.nanmean(first_ok.cpu().numpy())),
                                  c=float((csum / (n + 1)).mean().cpu()),
                                  len=float((n + 1).float().mean().cpu())))
@@ -114,6 +132,8 @@ def run(model, gp, a, A, iters, B, seed, device, tail=False):
 
 def summary(rows, A, iters):
     out = {}
+    search = [r for r in rows if r.get("kind") == "search"]
+    rows = [r for r in rows if r.get("kind", "revisit") == "revisit"]
     for i in range(A):
         blk = [r for r in rows if r["block"] == i]
         per = {j: float(np.mean([r["acc"] for r in blk if r["arena"] == j])) for j in range(i + 1)
@@ -124,6 +144,9 @@ def summary(rows, A, iters):
                       acc_first_last_iter=float(np.nanmean([r["acc_first"] for r in last]))
                       if last else None,
                       c_mean=float(np.mean([r["c"] for r in blk])) if blk else None,
+                      acc_near=float(np.mean([r["acc_near"] for r in blk])) if blk else None,
+                      c_search=float(np.mean([r["c_pre"] for r in search if r["block"] == i]))
+                      if any(r["block"] == i for r in search) else None,
                       step_end=blk[-1]["step"] if blk else None)
     return out
 
@@ -137,6 +160,9 @@ def main():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--tail", action="store_true",
                    help="run the whole search walk, not only up to the first arrival")
+    p.add_argument("--search_steps", type=int, default=None,
+                   help="length of the search walk (default: the checkpoint's visit_steps); "
+                        "the agent searches for up to 200 steps")
     p.add_argument("--device", default="cuda")
     p.add_argument("--out", default=None)
     c = p.parse_args()
@@ -154,7 +180,8 @@ def main():
         model.load_state_dict(ck["model"])
         model.eval()
         t0 = time.time()
-        rows, steps = run(model, gp, a, c.arenas, c.iters, c.lifetimes, c.seed, device, c.tail)
+        rows, steps = run(model, gp, a, c.arenas, c.iters, c.lifetimes, c.seed, device, c.tail,
+                          c.search_steps)
         s = summary(rows, c.arenas, c.iters)
         print(f"\n{path}  step {ck['step']}  {c.arenas} arenas x {c.iters} iterations, "
               f"{steps} memory steps per lifetime ({time.time() - t0:.0f}s)")
@@ -162,7 +189,8 @@ def main():
             arenas = " ".join(f"{j}:{v:.2f}" for j, v in r["acc_by_arena"].items())
             print(f"block {i} (to step {r['step_end']}): far reads by arena {arenas} | last "
                   f"iteration {r['acc_last_iter']:.2f}, first read {r['acc_first_last_iter']:.2f} "
-                  f"| c {r['c_mean']:.2f}", flush=True)
+                  f"| c {r['c_mean']:.2f} | near reads {r['acc_near']:.2f} | c in search "
+                  f"before arrival {r['c_search']:.2f}", flush=True)
         res.append(dict(ckpt=path, step=ck["step"], arenas=c.arenas, iters=c.iters,
                         tail=c.tail, memory_steps=steps, summary=s, rows=rows))
     if c.out:
