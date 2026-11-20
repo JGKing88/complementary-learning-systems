@@ -92,8 +92,8 @@ def revisit(goal, size, gen, wander_max=0, p_wander=0.0, noise=0.3, radius=1.0, 
     detour of up to ``wander_max`` steps with probability ``p_wander``."""
     B, dev = len(goal), goal.device
     start = torch.randint(0, size, (B, 2), device=dev, generator=gen).float()
-    L = int(torch.randint(1, wander_max + 1, (1,), generator=gen)) if wander_max else 0
-    if L and float(torch.rand(1, generator=gen)) < p_wander:
+    L = int(torch.randint(1, wander_max + 1, (1,), device=dev, generator=gen)) if wander_max else 0
+    if L and float(torch.rand(1, device=dev, generator=gen)) < p_wander:
         pw, hw = wander(start, L, size, gen)
         return _join(pw, hw, goal, size, gen, noise, radius, max_steps)
     return approach(start, goal, size, gen, noise, radius, max_steps)
@@ -104,7 +104,7 @@ def search(goal, size, gen, wander_min=5, wander_max=60, noise=0.3, radius=1.0, 
     arrival is step n (the store step)."""
     B, dev = len(goal), goal.device
     start = torch.randint(0, size, (B, 2), device=dev, generator=gen).float()
-    L = int(torch.randint(wander_min, wander_max + 1, (1,), generator=gen))
+    L = int(torch.randint(wander_min, wander_max + 1, (1,), device=dev, generator=gen))
     pw, hw = wander(start, L, size, gen)
     cells, heads, n = _join(pw, hw, goal, size, gen, noise, radius, max_steps)
     # the wander may already pass within the radius; the store fires at the first arrival
