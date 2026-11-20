@@ -180,7 +180,7 @@ table.heat .cell.na { background: var(--surface-2); color: var(--muted); }
           <div class="row"><label for="vhpc-v">Modules</label><select id="vhpc-v" class="grow"></select></div>
           <div class="row"><label for="vhpc-f">Active</label><select id="vhpc-f" class="grow"></select></div>
         </div>
-        <p class="hint" id="vhpc-hint" hidden>Vector-HaSH's place layer, relu(Wpg g − θ) on the one-hot grid code: 400 cells, Wpg Gaussian with about half the entries pruned (seed 0), drawn as build_scaffold draws it. Each module set has its own Wpg (434 grid inputs for 11, 12, 13; 875 for 11, 15, 23). One threshold θ per sparsity makes that share of all (cell, place) pairs active over the whole scaffold, exactly, so cells differ in how much they fire.</p>
+        <p class="hint" id="vhpc-hint" hidden>Vector-HaSH's place layer, relu(Wpg g − θ), on the one-hot grid code (Hippocampus) or on the smoothed grid code the encoder reads (smoothed input, folded into the weights): 400 cells, Wpg Gaussian with about half the entries pruned (seed 0), drawn as build_scaffold draws it. Each module set has its own Wpg (434 grid inputs for 11, 12, 13; 875 for 11, 15, 23). One threshold θ per sparsity makes that share of all (cell, place) pairs active over the whole scaffold, exactly, so cells differ in how much they fire.</p>
         <div class="row" id="band-row" hidden>
           <label for="band">Remove slow waves</label>
           <select id="band" class="grow"></select>
@@ -302,7 +302,8 @@ table.heat .cell.na { background: var(--surface-2); color: var(--muted); }
       <div class="rescol">
         <div class="seg" id="res-pop">
           <button type="button" data-rp="rect" aria-pressed="true">Rectified ideal</button>
-          <button type="button" data-rp="vhpc" aria-pressed="false">Vector-HaSH place cells</button>
+          <button type="button" data-rp="hippocampus" aria-pressed="false">Hippocampus</button>
+          <button type="button" data-rp="hippocampus_smooth" aria-pressed="false">Hippocampus, smoothed input</button>
         </div>
         <div class="resctl">
           <div class="row"><label for="res-measure">Measure</label><select id="res-measure"></select></div>
@@ -353,7 +354,7 @@ const MAX_RES = 512;              // maps above this many cells per side are blo
 const THUMB_RES = 160;
 const DETAIL_RES = 512;
 const SIZE_MIN = 4;
-const POP_ORDER = ["rect", "vhpc", "grid", "ideal", "ideal_rot", "ideal_place", "ideal_sparse", "ideal_sparse20", "trained", "trained_relu", "untrained", "hippocampus", "hippocampus_smooth"];
+const POP_ORDER = ["rect", "grid", "ideal", "ideal_rot", "ideal_place", "ideal_sparse", "ideal_sparse20", "trained", "trained_relu", "untrained", "hippocampus", "hippocampus_smooth"];
 // The MLP encoders, all computed by the GPU engine. Each one's output activation is its manifest "output".
 const MLP_KEYS = ["trained", "trained_relu", "untrained"];
 const ROT_CACHE_FLOATS = 1 << 25;  // the rotated ideal keeps every unit for arenas up to this many values
@@ -460,19 +461,16 @@ async function loadAll() {
   st.M = M; NPOS = M.npos; st.RV = RV; st.HV = HV;
   useRectVariant(await loadRectVariant(st.rectVar));
   await Promise.all(HV.map(v => loadHpcVariant(v.key)));
-  st.pops.vhpc = makeVhpc();
+  for (const k of HPC_POPS) st.pops[k] = makeHpcPop(k);
   const P = M.populations;
-  const [wpg, wpgS, qPlace, ...wMlp] = await Promise.all([
-    fetchText(P.hippocampus.wpg_file), fetchText(P.hippocampus_smooth.wpg_file), fetchText(P.ideal_place.q_file),
-    ...MLP_KEYS.map(k => fetchText(P[k].weights_file))]);
+  const [qPlace, ...wMlp] = await Promise.all([
+    fetchText(P.ideal_place.q_file), ...MLP_KEYS.map(k => fetchText(P[k].weights_file))]);
   st.pops.grid = makeGrid(P.grid);
   st.pops.ideal = makeIdeal(P.ideal);
   st.pops.ideal_rot = makeIdealRot(P.ideal_rot, P.ideal);
   st.pops.ideal_place = makeIdealPlace(P.ideal_place, P.ideal, f32(qPlace));
   st.pops.ideal_sparse = makeIdealSparse("ideal_sparse", P.ideal_sparse, st.pops.ideal_rot.signs);
   st.pops.ideal_sparse20 = makeIdealSparse("ideal_sparse20", P.ideal_sparse20, st.pops.ideal_rot.signs);
-  st.pops.hippocampus = makeHpc("hippocampus", P.hippocampus, f64(wpg));
-  st.pops.hippocampus_smooth = makeHpc("hippocampus_smooth", P.hippocampus_smooth, f64(wpgS));
   MLP_KEYS.forEach((k, i) => {
     st.mlp[k] = unpackMlp(P[k], f32(wMlp[i]));
     st.pops[k] = makeMlp(k, P[k]);
@@ -707,7 +705,7 @@ async function startWorker() {
     w.onerror = e => { if (e.preventDefault) e.preventDefault(); stopWorker("the background thread stopped (" + (e.message || "unknown error") + ")"); };
     wk.w = w;
     await Promise.race([
-      callWorker("init", { wpgs: { hippocampus: st.pops.hippocampus.Wpg, hippocampus_smooth: st.pops.hippocampus_smooth.Wpg },
+      callWorker("init", { wpgs: {},
                            signs: st.pops.ideal_rot.signs, placeQ: st.pops.ideal_place.Q }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("no reply within 5 s")), 5000)),
     ]);
@@ -902,17 +900,25 @@ function hpcArgs(V, c) {
   for (const l of L) { offs.push(o); o += l * l; }
   return { key: "vhpc_" + V.key, npos: V.HM.npos, L, offs, ng: o, thresh: c.thresh };
 }
-function makeVhpc() {
-  const meta = { label: "Vector-HaSH place cells", description: "" }, sent = new Set();
-  const cur = () => { const V = st.hpcVars[st.vhpc.v]; return { V, c: V.HM.codes.find(c => c.key === fTag(st.vhpc.f)) }; };
+// The two hippocampus populations share one module set and sparsity (st.vhpc); each reads its own
+// variant, <modules>_onehot or <modules>_smooth.
+const HPC_POPS = ["hippocampus", "hippocampus_smooth"];
+const HPC_INPUT = { hippocampus: "onehot", hippocampus_smooth: "smooth" };
+const hpcModules = () => [...new Map(st.HV.map(v => [v.modules, v])).values()];
+const hpcVar = (key, mods = st.vhpc.v) => st.hpcVars[mods + "_" + HPC_INPUT[key]];
+function makeHpcPop(key) {
+  const smooth = HPC_INPUT[key] === "smooth", sent = new Set();
+  const meta = { label: smooth ? "Hippocampus, smoothed input" : "Hippocampus", description: "" };
+  const cur = () => { const V = hpcVar(key); return { V, c: V.HM.codes.find(c => c.key === fTag(st.vhpc.f)) }; };
   const pop = {
-    key: "vhpc", meta, signed: false, code: cur,
-    get n() { return st.hpcVars[st.vhpc.v].HM.Np; },
+    key, meta, signed: false, code: cur,
+    get n() { return hpcVar(key).HM.Np; },
     refresh() {
       const { V, c } = cur();
-      meta.description = "Vector-HaSH's place layer, relu(Wpg g − θ) on the one-hot grid code of modules " + V.HM.lambdas.join(", ") +
-        " (" + V.HM.Ng + " grid inputs, " + V.HM.Np + " cells). θ = " + c.thresh.toFixed(3) + " makes " + (100 * c.active_exact).toFixed(1) +
-        "% of (cell, place) pairs active over the " + V.HM.npos + "-cell scaffold.";
+      meta.description = "Vector-HaSH's place layer, relu(Wpg g − θ), on the " +
+        (smooth ? "smoothed grid code (bumps of FWHM " + V.HM.fwhm + " of each period, the encoder's input; folded into Ws = Wpg B)" : "one-hot grid code, as the model builds it") +
+        ", modules " + V.HM.lambdas.join(", ") + " (" + V.HM.Ng + " grid inputs, " + V.HM.Np + " cells). θ = " + c.thresh.toFixed(3) + " makes " +
+        (100 * c.active_exact).toFixed(1) + "% of (cell, place) pairs active over the " + V.HM.npos + "-cell scaffold.";
     },
     label(u) { return "cell " + u; },
     info(u) {
@@ -1667,7 +1673,7 @@ function eff() {
   return { rectify: rate && st.f.rectify, sigma: rate ? st.f.sigma : 0, thresh: st.f.thresh, minSize: st.f.minSize };
 }
 const viewKey = () => JSON.stringify([st.popKey, st.x0, st.y0, st.S, eff(), isIdealPop(st.popKey) ? st.nmin : 0,
-                                      st.popKey === "rect" ? st.rectVar + ":" + rectKey() : st.popKey === "vhpc" ? st.vhpc.v + ":" + fTag(st.vhpc.f) : ""]);
+                                      st.popKey === "rect" ? st.rectVar + ":" + rectKey() : HPC_POPS.includes(st.popKey) ? st.vhpc.v + ":" + fTag(st.vhpc.f) : ""]);
 function currentOrder(pop) {
   if (st.order && st.orderPop === pop.key) return st.order;
   return Array.from({ length: pop.n }, (_, i) => i);
@@ -1797,9 +1803,9 @@ function caption(r) {
   }
 }
 function renderPopHead() {
-  const rc = st.popKey === "rect" ? st.rectChecks[st.rectVar] : st.popKey === "vhpc" ? st.hpcChecks[st.vhpc.v] : null;
+  const isH = HPC_POPS.includes(st.popKey), rc = st.popKey === "rect" ? st.rectChecks[st.rectVar] : isH ? st.hpcChecks[hpcVar(st.popKey).key] : null;
   const sub = st.popKey === "rect" ? rectKey() : fTag(st.vhpc.f);
-  const pop = st.pops[st.popKey], ck = st.popKey !== "rect" && st.popKey !== "vhpc" ? st.checks[st.popKey]
+  const pop = st.pops[st.popKey], ck = st.popKey !== "rect" && !isH ? st.checks[st.popKey]
     : rc && rc.error ? { error: rc.error } : rc ? rc.per[sub] : undefined;
   $("pop-title").textContent = pop.meta.label + " · " + pop.n + " units";
   const desc = $("pop-desc");
@@ -1918,9 +1924,12 @@ async function runChecks() {
       if (st.popKey === "rect") renderPopHead();
       continue;
     }
-    if (key === "vhpc") {
-      for (const v of st.HV) if (!st.hpcChecks[v.key]) { await checkVhpc(st.hpcVars[v.key]); renderChecks(); }
-      if (st.popKey === "vhpc") renderPopHead();
+    if (HPC_POPS.includes(key)) {
+      for (const m of hpcModules()) {
+        const V = hpcVar(key, m.modules);
+        if (!st.hpcChecks[V.key]) { await checkVhpc(V, pop); renderChecks(); }
+      }
+      if (st.popKey === key) renderPopHead();
       continue;
     }
     try {
@@ -1967,13 +1976,13 @@ async function checkRect(V) {
 }
 // Every sparsity of one place-cell module set, on its check cells (hpc_ref_<variant>.b64.txt:
 // sparsity, then cell, then check cell).
-async function checkVhpc(V) {
+async function checkVhpc(V, pop) {
   const HM = V.HM, R = HM.ref_arena, N = R.S * R.S, U = HM.check_units.length, rec = st.hpcChecks[V.key] = { per: {} };
   try {
     const ref = f32(await fetchText("hpc_ref_" + V.key + ".b64.txt"));
     let off = 0, maxAll = 0, badAll = 0;
     for (const c of HM.codes) {
-      const res = await st.pops.vhpc.maps(HM.check_units, R, true, { V, c }), ours = res.data;
+      const res = await pop.maps(HM.check_units, R, true, { V, c }), ours = res.data;
       let maxAbs = 0, bad = 0;
       for (let q = 0; q < U; q++) for (let i = 0; i < N; i++) {
         const d = Math.abs(ours[q * N + i] - ref[off + i * U + q]);
@@ -1992,10 +2001,10 @@ async function checkVhpc(V) {
 function renderChecks() {
   const rows = [];
   for (const k of POP_ORDER) {
-    if (k === "vhpc") {
-      for (const v of st.HV) {
-        const rc = st.hpcChecks[v.key], done = rc && (rc.error || rc.maxAbs !== undefined);
-        rows.push(["Vector-HaSH place cells, modules " + v.label + " (6 sparsities)", done ? rc : null, "pending"]);
+    if (HPC_POPS.includes(k)) {
+      for (const m of hpcModules()) {
+        const rc = st.hpcChecks[hpcVar(k, m.modules).key], done = rc && (rc.error || rc.maxAbs !== undefined);
+        rows.push([st.pops[k].meta.label + ", modules " + m.label + " (6 sparsities)", done ? rc : null, "pending"]);
       }
       continue;
     }
@@ -2120,17 +2129,17 @@ function inkFor(r, g, b) {
 // The heatmap's rows, columns and values for the population the panel shows: the rectified grid
 // (sparsity by units, for the module set picked above) or the place cells (sparsity by module set).
 function resSource(m) {
-  if (st.res.pop === "vhpc") {
-    const Vs = st.HV.map(v => st.hpcVars[v.key]), mods = k => st.hpcVars[k].HM.lambdas.join(", ");
+  if (HPC_POPS.includes(st.res.pop)) {
+    const key = st.res.pop, mods = hpcModules(), V = k => hpcVar(key, k), lab = st.pops[key].meta.label;
     return {
-      rows: Vs[0].HM.Fs, cols: Vs.map(V => V.key), probe: false,
-      colLabel: k => "modules " + mods(k),
+      rows: V(mods[0].modules).HM.Fs, cols: mods.map(x => x.modules), probe: false,
+      colLabel: k => "modules " + V(k).HM.lambdas.join(", "),
       rowLabel: f => Math.round(100 * f) + "% active",
-      name: (f, k) => "Place cells, " + Math.round(100 * f) + "% active, modules " + mods(k),
-      value: (f, k) => { const V = st.hpcVars[k], q = V.HX && V.HX.get(fTag(f)), v = q ? m.get(q) : null; return v == null ? NaN : v; },
+      name: (f, k) => lab + ", " + Math.round(100 * f) + "% active, modules " + V(k).HM.lambdas.join(", "),
+      value: (f, k) => { const H = V(k), q = H.HX && H.HX.get(fTag(f)), v = q ? m.get(q) : null; return v == null ? NaN : v; },
       clickable: () => true, isSel: (f, k) => f === st.vhpc.f && k === st.vhpc.v,
-      pick: (f, k) => { setVhpc(k, f); setPop("vhpc"); },
-      missing: Vs.every(V => !V.HR) ? "Place-cell field results are not in yet." : null,
+      pick: (f, k) => { setVhpc(k, f); setPop(key); },
+      missing: mods.every(x => !V(x.modules).HR) ? "Field results for this population are not in yet." : null,
       clickNote: "Click a cell to view those place cells.",
     };
   }
@@ -2148,7 +2157,7 @@ function resSource(m) {
   };
 }
 function renderResults() {
-  if (!st.RM || !LUT || !st.pops.vhpc) return;
+  if (!st.RM || !LUT || !st.pops.hippocampus) return;
   const m = RES_BY_KEY[st.res.measure], src = resSource(m), probe = src.probe;
   $("res-k-row").hidden = !probe; $("res-inh").hidden = !probe;
   $("res-def").textContent = m.def;
@@ -2191,10 +2200,10 @@ function renderResults() {
 const putStats = rows => $("sel-stats").replaceChildren(...rows.flatMap(([k, v]) => {
   const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = k; dd.textContent = v; return [dt, dd];
 }));
-function renderSelectedHpc() {
-  const { V, c } = st.pops.vhpc.code(), HM = V.HM, q = V.HX && V.HX.get(c.key), rows = [];
+function renderSelectedHpc(key) {
+  const { V, c } = st.pops[key].code(), HM = V.HM, q = V.HX && V.HX.get(c.key), rows = [];
   const fx = (x, d) => x == null ? "–" : x.toFixed(d);
-  $("sel-title").textContent = "Vector-HaSH place cells, " + Math.round(100 * c.f) + "% active, modules " + HM.lambdas.join(", ") + " (" + HM.Np + " cells)";
+  $("sel-title").textContent = st.pops[key].meta.label + ", " + Math.round(100 * c.f) + "% active, modules " + HM.lambdas.join(", ") + " (" + HM.Np + " cells)";
   rows.push(["Threshold θ", c.thresh.toFixed(4) + " on a sum of " + HM.lambdas.length + " weights"]);
   rows.push(["Active pairs", (100 * c.active_exact).toFixed(2) + "% of all (cell, place), exact"]);
   rows.push(["Grid period used", (+HM.lambda_ref).toFixed(2) + " cells (" + (HM.lambdas.join("") === "111213" ? "the middle module" : "geometric mean of the modules") + ")"]);
@@ -2215,7 +2224,7 @@ function renderSelectedHpc() {
   drawHist(q, HM.lambda_ref);
 }
 function renderSelected() {
-  if (st.res.pop === "vhpc") { renderSelectedHpc(); return; }
+  if (HPC_POPS.includes(st.res.pop)) { renderSelectedHpc(st.res.pop); return; }
   const c = st.pops.rect.code(), q = st.RX && st.RX.F.get(c.key), rows = [];
   $("sel-title").textContent = Math.round(100 * c.f) + "% active, " + c.D + " units (" + c.n_freq + " waves), modules " + modulesText(st.RM);
   rows.push(["Kernel radius r", c.r.toFixed(2) + " cells (unrectified ideal " + st.RM.r_ideal + ")"]);
@@ -2339,7 +2348,7 @@ function setBand(c) {
   requestRender();
 }
 function showRect() {
-  const on = st.popKey === "rect", hp = st.popKey === "vhpc";
+  const on = st.popKey === "rect", hp = HPC_POPS.includes(st.popKey);
   $("rect-row").hidden = !on; $("rect-hint").hidden = !on;
   $("vhpc-row").hidden = !hp; $("vhpc-hint").hidden = !hp;
 }
@@ -2348,10 +2357,10 @@ function setVhpc(v, f) {
   if (v === st.vhpc.v && f === st.vhpc.f) return;
   st.vhpc = { v, f };
   $("vhpc-v").value = v; $("vhpc-f").value = String(f);
-  st.pops.vhpc.refresh();
-  if (st.popKey === "vhpc") {
+  for (const k of HPC_POPS) st.pops[k].refresh();
+  if (HPC_POPS.includes(st.popKey)) {
     st.sel = null; st.page = 0; st.sortToken++;
-    if (st.orderPop === "vhpc") { st.order = null; st.orderPop = null; }
+    if (HPC_POPS.includes(st.orderPop)) { st.order = null; st.orderPop = null; }
     if (st.sort === "random") shuffleOrder();
     updateSortNote();
     if (SORTS[st.sort].stat) computeSort();
@@ -2421,7 +2430,7 @@ function setPop(key) {
   updateSortNote();
   if (SORTS[st.sort].stat) computeSort();
   requestRender();
-  if (key === "rect" || key === "vhpc") setResPop(key);
+  if (key === "rect" || HPC_POPS.includes(key)) setResPop(key);
 }
 function changePage(d) { st.page += d; requestRender(); }
 function stepSel(d) {
@@ -2482,7 +2491,7 @@ function buildControls() {
   $("rect-D").replaceChildren(...st.RM.Ds.map(D => { const o = document.createElement("option"); o.value = String(D); o.textContent = D + " units (" + D / 2 + " waves)"; return o; }));
   $("rect-f").value = String(st.rect.f); $("rect-D").value = String(st.rect.D);
   showRect();
-  $("vhpc-v").replaceChildren(...st.HV.map(v => { const o = document.createElement("option"); o.value = v.key; o.textContent = v.label + (v.has_results ? "" : ", results pending"); return o; }));
+  $("vhpc-v").replaceChildren(...hpcModules().map(m => { const o = document.createElement("option"); o.value = m.modules; o.textContent = m.label; return o; }));
   $("vhpc-f").replaceChildren(...st.hpcVars[st.HV[0].key].HM.Fs.map(f => { const o = document.createElement("option"); o.value = String(f); o.textContent = pct(f) + " of (cell, place) pairs"; return o; }));
   $("vhpc-v").value = st.vhpc.v; $("vhpc-f").value = String(st.vhpc.f);
   buildMeasureSelect();
