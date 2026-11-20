@@ -2130,13 +2130,23 @@ So far the protocol-trained memory holds about 3 goals through the
 would need. The agent backend (stage 3) waits until the memory holds
 every arena at 0.8 or better.
 
-Stage 2 later (2026-11-20). Both runs reached 6 arenas: `ft` at update
-26,261, `scratch` at 31,527. At the protocol's 40 iterations the last
-block held 3.0 to 3.8 goals for `ft` (updates 26k to 44k) and climbed to
-4.3 for `scratch` (1.4 at 12k, 4.0 to 4.3 at 34k to 38k). The two store
-differently: `ft` keeps the first goals and the newest and loses arena 3
-at every test (0.02 to 0.21); `scratch` holds all arenas about equally
-(0.55 to 0.86 at 38k).
+Stage 2 final (2026-11-20). Both runs reached 6 arenas: `ft` at update
+26,261, `scratch` at 31,527. At the protocol's 40 iterations, with the
+training walks' one-cell axis moves:
+- `ft` held 3.0 to 3.9 goals in the last block from update 26k to its end
+  at 50k (final 3.9: 0.91, 0.81, 0.74, 0.17, 0.44, 0.81). It keeps the
+  first goals and the newest and loses arena 3 at every test.
+- `scratch` kept climbing and ended at 60k (job 29753574) with every
+  arena at 0.80 or better: 0.98, 0.99, 0.94, 0.84, 0.81, 0.80 in the last
+  block, 5.4 goals; by block 1.00, 0.99, 0.99, 0.97, 0.94, 0.89. Its last
+  block held 1.4 goals at 12k, 4.0 to 4.3 at 34k to 38k, 4.7 to 4.9 at
+  40k to 52k and 5.0 to 5.4 at 54k to 60k.
+
+So with lifetime-shaped training and the movement it was trained on, an
+activity memory holds all 6 goals through the 11,700-step protocol. The
+cost is 60k updates from scratch; warm-starting from the §7b.11 memory
+stalled at about 3.5. This revises the interim reading above (about 3
+goals at update 10k).
 
 Stage 3, zero-shot (2026-11-20). Idea 1's trained controller
 (`navigate_navp2_task3r_k2_h128_gmlp_s42_24342872/navigate_u3800.pt`) with
