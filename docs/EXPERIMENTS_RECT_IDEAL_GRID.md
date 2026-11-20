@@ -266,3 +266,47 @@ occurs once, and a cell's input over the scaffold is its weight sum over every c
 phase per module (`matched_thresh`, bisection on `active_fraction`). Cells differ in how much they
 fire, as in Vector-HaSH. Fields, sizes and kernels use `fields.py`'s definitions and summaries.
 Results: `$CLS_RESULTS/rect_ideal_grid/hpc/` (`vhpc_<variant>_fXX.json`, `hpc_results_<variant>.json`).
+
+The page shows these as the existing "Hippocampus" (one-hot input) and "Hippocampus, smoothed
+input" populations, with shared Modules and Active menus. The 11, 12, 13 weights are byte-identical
+to the ones those populations already used (`hippocampus_wpg.b64.txt`, `hippocampus_smooth_wpg.b64.txt`);
+only the threshold changes (it was 2.0 and 4.63, 26.5% and 6.9% active).
+
+**Results (2026-11-20).** Fields per cell are over the whole scaffold; diameters are equivalent
+diameters in cells; the kernel half-width is where the raw population cosine falls to 0.5; "per-cell
+active share" is the 5th to 95th percentile over cells (one global threshold, so cells differ).
+
+| input, modules | f | theta | fields per cell | diameter median, p95 (cells) | kernel half-width (cells) | per-cell active share |
+|---|---|---|---|---|---|---|
+| one-hot, 11 12 13 | 2% | 2.90 | 56,537 | 1.1, 1.1 | 0.51 | 1.0-3.1% |
+| | 10% | 1.70 | 235,918 | 1.1, 1.6 | 0.53 | 7.1-12.9% |
+| | 20% | 1.07 | 358,143 | 1.1, 2.3 | 0.56 | 15.9-24.3% |
+| | 50% (47.3%) | 0 | 228,569 | 1.6, 5.8 | 0.71 | 41-53% |
+| one-hot, 11 15 23 | 2% | 2.88 | 276,542 | 1.1, 1.1 | 0.51 | 1.2-2.9% |
+| | 20% | 1.05 | 1,747,154 | 1.1, 2.3 | 0.57 | 16.7-23.4% |
+| | 50% (47.0%) | 0 | 1,130,226 | 1.6, 5.8 | 0.70 | 43-51% |
+| smoothed, 11 12 13 | 2% | 6.41 | 12,846 | 2.0, 4.1 | 1.18 | 0-6.7% |
+| | 10% | 4.01 | 31,115 | 2.8, 6.1 | 1.59 | 1.3-24.6% |
+| | 20% | 2.66 | 34,269 | 3.4, 7.7 | 1.85 | 4.8-41% |
+| | 50% | 0.09 | 12,443 | 4.8, 13.0 | 2.79 | 25-75% |
+| smoothed, 11 15 23 | 2% | 8.89 | 34,010 | 2.5, 5.9 | 1.64 | 0-6.9% |
+| | 10% | 5.58 | 79,807 | 3.4, 8.8 | 2.26 | 1.6-23.2% |
+| | 20% | 3.70 | 87,253 | 4.2, 11.8 | 2.69 | 6.3-40% |
+| | 50% | 0.11 | 30,183 | 4.4, 20.5 | 4.14 | 28-74% |
+
+All f are in `hpc_results_<variant>.json` and on the page.
+
+* **With the one-hot input every field is a single scaffold cell** (median equivalent diameter 1.1
+  cells, area 1) at every sparsity up to 35%, and the population kernel falls to 0.5 within one cell:
+  the layer is spatially white, because neighbouring cells sit at unrelated grid phases. Fields per
+  cell are then just active cells, so they scale with the scaffold's area: 4.88 times as many on
+  11, 15, 23 at 20% (the area ratio is 4.89).
+* **The smoothed input widens fields to 2 to 5 cells** (0.16 to 0.40 grid periods) and the kernel to
+  1.2 to 4.1 cells, wider for 11, 15, 23 because its bumps are a fixed fraction (FWHM 0.25) of larger
+  periods. Cells differ much more in how much they fire (0 to 7% of the scaffold at f = 2%), and at
+  50% the active regions start to join (largest field 42% of a cell's active area).
+* **Both are one to two orders of magnitude narrower than the rectified ideal codes**, whose median
+  field is 30 to 42 cells across (2.5 to 3.5 periods) at matched kernel width.
+* **50% is not reachable with the one-hot input.** About 40% of the weights are pruned to zero, so
+  about 6% of (cell, place) pairs have input exactly 0; theta = 0 gives 47.3% (11, 12, 13) and 47.0%
+  (11, 15, 23) active (`matched_thresh` snaps to 0; the page shows the fraction actually active).
