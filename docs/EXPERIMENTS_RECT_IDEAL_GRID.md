@@ -136,6 +136,37 @@ fields are under 9 cells at every f.
   rises monotonically with f, since the 20% line cuts the joined regions of dense codes back into
   separate peaks.
 
+**Why the count rises and then falls: the Euler characteristic of a Gaussian field's excursion
+set.** Before the threshold, each unit's map `(Q z)_i(p)` is a sum of hundreds of random-phase waves,
+so it is close to a smooth stationary Gaussian field whose covariance is the ideal kernel. Its
+fields are the excursion set above the threshold, at `u = Phi^-1(1 - f)` standard deviations. As u
+falls, more peaks clear it (fields are added) and the saddles between neighbouring peaks clear it
+too (fields join). For a 2D isotropic Gaussian field the expected Euler characteristic of the
+excursion set (fields minus the holes inside them) per unit area is exact (Adler and Taylor):
+
+    EC density = lambda2 * u * exp(-u^2 / 2) / (2 pi)^(3/2),   lambda2 = 1 / r^2
+
+where lambda2 is the variance of the field's derivative along one axis (the waves' angular
+frequencies have variance 1 / r^2 per axis). It peaks at u = 1 (f = 16%) at fixed r, is zero at the
+median (u = 0, f = 50%), and contains no D, which is why the field statistics do not depend on D.
+Holes are rare until fields start to join, so below 35% it is the field count. Over the
+1716 x 1716 scaffold (r from `codes.matched_r`):
+
+| f | u | r | predicted fields per unit | measured, D = 1024 | measured, all D |
+|---|---|---|---|---|---|
+| 2% | 2.054 | 28.08 | 59 | 58 | 56-59 |
+| 5% | 1.645 | 25.30 | 124 | 121 | 119-124 |
+| 10% | 1.282 | 23.02 | 199 | 194 | 191-200 |
+| 20% | 0.842 | 20.74 | 257 | 251 | 247-259 |
+| 35% | 0.385 | 18.96 | 186 | 198 | 194-203 |
+| 50% | 0 | 17.86 | 0 | 79 | 72-80 |
+
+The prediction is within 3% up to 20%. At 35% the measured count is 12 above it: those are the holes
+inside joined fields (components = EC + holes). At 50% joined fields and holes cancel in the EC, and
+the active set sits at its percolation point (the median level of a planar Gaussian field), so one
+connected web holds 75% of each unit's active area. The predicted numbers were worked by hand from
+the formula; the measured ones are `support.fields_per_unit.mean` in `grid_results.json`.
+
 ### Hopfield probe (2026-11-19, all 65 runs)
 
 **With the one inhibition constant, the memory measures depend mainly on the number of active units
