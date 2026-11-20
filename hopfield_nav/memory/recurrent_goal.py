@@ -64,6 +64,31 @@ class RecurrentGoalMemory:
         """Mark the next read as the store step (the oracle store fires)."""
         self.flag = 1.0 if on else 0.0
 
+    def tag(self, **info) -> None:
+        """Diagnostics only: the protocol says which block and arena the next
+        reads are in, that arena's true goal (local cell) and whether its goal
+        is stored. ``recurrent_signal`` then logs how the reads compare."""
+        self.info = info
+        if not hasattr(self, "stats"):
+            self.stats = {}
+
+    def block_stats(self, block: int) -> dict:
+        """Per arena of ``block``: reads with the goal stored (far-read hit
+        rate, cosine of d with the true direction, mean c) and before it
+        (mean c, fraction with d on)."""
+        out = {}
+        for (b, j, known), s in sorted(getattr(self, "stats", {}).items()):
+            if b != block:
+                continue
+            r = out.setdefault(j, {})
+            n = max(s["n"], 1)
+            if known:
+                r.update(far_hit=s["hit"] / max(s["far"], 1), cos_d=s["cos"] / max(s["ncos"], 1),
+                         c=s["c"] / n, reads=s["n"])
+            else:
+                r.update(c_unknown=s["c"] / n, d_on_unknown=s["on"] / n, reads_unknown=s["n"])
+        return out
+
     def input_memory(self, entry) -> None:
         """The write happened inside the flagged read; only count it."""
         self.num_memories += 1
@@ -111,5 +136,22 @@ def recurrent_signal(readout, memories, views, psi, positions, env_offset):
         d[has] = readout.mlp.direction(torch.from_numpy(g_now),
                                        torch.from_numpy(g_goal)).numpy()
     c = (sig * np.array([m.c_scale for m in memories])).astype(np.float32)
+    for b, m in enumerate(memories):                   # diagnostics (tag), no effect on the read
+        info = getattr(m, "info", None)
+        if info is None:
+            continue
+        key = (info["block"], info["arena"], bool(info["known"]))
+        s = m.stats.setdefault(key, dict(n=0, far=0, hit=0, cos=0.0, ncos=0, c=0.0, on=0))
+        goal = np.asarray(info["goal"], dtype=np.float64)
+        to_goal = goal - positions[b]
+        s["n"] += 1
+        s["c"] += float(sig[b])
+        s["on"] += int(has[b])
+        if np.linalg.norm(to_goal) > 1.5:
+            s["far"] += 1
+            s["hit"] += int(np.linalg.norm(goal_cell[b] - goal) <= 1.5)
+        if has[b] and np.linalg.norm(to_goal) > 0:
+            s["cos"] += float(d[b] @ to_goal / (np.linalg.norm(d[b]) * np.linalg.norm(to_goal) + 1e-9))
+            s["ncos"] += 1
     channel = d * c[:, None] if readout.scale_q_by_c else d
     return channel.astype(np.float32), channel.astype(np.float32), has, c

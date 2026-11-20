@@ -345,6 +345,9 @@ def run_sequential(
                 if steer is not None:
                     steer.update(known=bool(goal_in_mem[j]), env=env_j,
                                  arena=j, block=i, t=0)
+                if hasattr(hopfield, "tag"):              # idea 4 memory: diagnostics only
+                    hopfield.tag(block=i, arena=j, goal=tuple(env_j.goal_location),
+                                 known=bool(goal_in_mem[j]))
                 reached, stg, ptg, sag, sog = mini_episode(
                     agent=agent, env=env_j, env_offset=env_offset_j,
                     vectorhash=vectorhash, hopfield=hopfield,
@@ -390,6 +393,11 @@ def run_sequential(
                      f"trained={block_bce_n}  skipped={block_skipped}  "
                      f"n_pos={block_n_pos_total}  n_neg={block_n_neg_total}")
         print(line, flush=True)
+        if hasattr(hopfield, "block_stats"):
+            for j, r in hopfield.block_stats(i).items():
+                print("    memory reads, arena %d: " % j + "  ".join(
+                    f"{k} {v:.3f}" if isinstance(v, float) else f"{k} {v}"
+                    for k, v in r.items()), flush=True)
 
     return trace, blocks, stored_at_goal_count
 
