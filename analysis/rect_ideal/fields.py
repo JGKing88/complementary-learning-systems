@@ -35,13 +35,20 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 
 from analysis.hopfield_probe.ideal_encoder import IdealEncoder, parse_ideal_spec
-from analysis.rect_ideal.codes import LAMBDA_REF, LAMBDAS, NPOS, R_IDEAL
+from analysis.rect_ideal.codes import DEFAULT, VARIANTS, npos as variant_npos
+
+# The scaffold and size reference of the run's variant (codes.VARIANTS), set in main() before
+# any work: every function below reads them at call time.
+NPOS = variant_npos(DEFAULT)
+LAMBDAS = VARIANTS[DEFAULT]["lambdas"]
+LAMBDA_REF = VARIANTS[DEFAULT]["lambda_ref"]
+R_IDEAL = VARIANTS[DEFAULT]["r_ideal"]
 
 PEAK_FRAC = 0.2
 MIN_AREA = 9
 NB = (NPOS + 7) // 8
 DEFS = ("support", "peak20")
-LOG_EDGES = np.round(np.arange(-1.2, 2.31, 0.05), 3)       # log10(diameter / 12)
+LOG_EDGES = np.round(np.arange(-1.2, 2.61, 0.05), 3)       # log10(diameter / lambda_ref)
 
 
 class FastCode:
@@ -207,7 +214,12 @@ def main(argv=None) -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--rows", type=int, default=8, help="scaffold rows per chunk")
     ap.add_argument("--workers", type=int, default=int(os.environ.get("SLURM_CPUS_PER_TASK", 4)))
+    ap.add_argument("--variant", default=DEFAULT, choices=sorted(VARIANTS))
     args = ap.parse_args(argv)
+    global NPOS, NB, LAMBDAS, LAMBDA_REF, R_IDEAL
+    v = VARIANTS[args.variant]
+    NPOS, LAMBDAS = variant_npos(args.variant), v["lambdas"]
+    NB, LAMBDA_REF, R_IDEAL = (NPOS + 7) // 8, v["lambda_ref"], v["r_ideal"]
 
     t0 = time.time()
     torch.set_num_threads(args.workers)
@@ -215,10 +227,13 @@ def main(argv=None) -> int:
     if not kw.get("relu_mix") or kw.get("center") or kw.get("center_global"):
         raise SystemExit("fields need a relu_mix code without centring")
     enc = IdealEncoder(**kw).eval()
+    if enc.npos != NPOS:
+        raise SystemExit(f"spec scaffold {enc.npos} != variant {args.variant}'s {NPOS}")
     code = FastCode(enc)
     D = code.D
     out = {"spec": args.spec, "label": args.label, "D": D, "n_freq": enc.n_freq,
            "r": enc.r, "active": enc.active, "thresh": code.t, "npos": NPOS,
+           "variant": args.variant, "r_ideal": R_IDEAL,
            "lambdas": list(LAMBDAS), "lambda_ref": LAMBDA_REF, "min_area": MIN_AREA,
            "peak_frac": PEAK_FRAC, "connectivity": 4}
 
@@ -235,7 +250,7 @@ def main(argv=None) -> int:
     # Kernel widths: raw cosine, after the global constant, and the signed ideal at this D.
     c = global_mean(code)
     Craw, Cinh = kernel(code), kernel(code, c)
-    ideal = FastCode(IdealEncoder(r=R_IDEAL, n_freq=enc.n_freq, seed=enc.seed).eval())
+    ideal = FastCode(IdealEncoder(r=R_IDEAL, n_freq=enc.n_freq, seed=enc.seed, lambdas=LAMBDAS).eval())
     Cid = kernel(ideal)
     fl = floor(code)
     out["kernel"] = {

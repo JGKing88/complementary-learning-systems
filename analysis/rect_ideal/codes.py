@@ -1,4 +1,4 @@
-"""The rectified-ideal grid: sparsity f by number of units D.
+"""The rectified-ideal grid: sparsity f by number of units D, for one set of grid modules.
 
 Each code is ``ideal_encoder.IdealEncoder`` with ``relu_mix=1, active=f``:
 
@@ -12,7 +12,7 @@ baseline.
 Kernel width is matched, not fixed. Rectifying narrows the population kernel, more so at small f.
 ``matched_r(f)`` widens the ideal's kernel radius r until the rectified code's kernel, measured
 after the one global inhibition constant is removed, falls to 0.5 at the same distance as the
-ideal's at r = 16. It is exact in the large-D limit:
+ideal's at the variant's own r (16 cells for modules 11, 12, 13). It is exact in the large-D limit:
 
 * the ideal's kernel along an axis is ``k_r(d) = sum_n P_r(n) cos(2 pi n d / Npos)``, with
   ``P_r`` the law of ``round(N(0, sigma^2))``, ``sigma = Npos / (2 pi r)``
@@ -24,9 +24,17 @@ ideal's at r = 16. It is exact in the large-D limit:
 
 The finite draw at each D moves the realised width a little; ``fields.py`` measures it.
 
-    python -m analysis.rect_ideal.codes            # print the grid and the matched r
-    python -m analysis.rect_ideal.codes probe I    # "spec|label" of probe task I
-    python -m analysis.rect_ideal.codes field I    # "spec|label" of field task I
+**Variants.** The ideal code depends on the grid modules only through the scaffold size
+``Npos = prod(lambdas)``: its units are waves over position. ``m111213`` is the original grid.
+``m111523_r16`` puts the same kernel (r = 16 cells) on the 11, 15, 23 scaffold (3795 cells);
+``m111523_rs`` scales r with the modules' geometric-mean period, ``Npos^(1/3)`` (15.59 against
+11.97), to r = 20.84. Sizes are reported over ``lambda_ref``: 12 cells for the original modules and
+the geometric mean, 15.59 cells, for 11, 15, 23.
+
+    python -m analysis.rect_ideal.codes [VARIANT]               # print the grid and the matched r
+    python -m analysis.rect_ideal.codes probe I [VARIANT]       # "spec|label" of probe task I
+    python -m analysis.rect_ideal.codes field I [VARIANT]       # "spec|label" of field task I
+    python -m analysis.rect_ideal.codes var KEY [VARIANT]       # one variant setting (npos, ...)
 """
 from __future__ import annotations
 
@@ -37,30 +45,55 @@ import numpy as np
 from scipy.optimize import brentq
 from scipy.special import ndtr, ndtri
 
-NPOS = 1716
-LAMBDAS = (11, 12, 13)
-LAMBDA_REF = 12.0                    # sizes are reported over this period (modules are 11-13)
-R_IDEAL = 16.0
 FS = (0.02, 0.05, 0.10, 0.20, 0.35, 0.50)
 DS = (256, 512, 1024, 2048, 4096)
 BASE = "seed=0,gain=100"
 
 
+def _gm_period(lambdas) -> float:
+    return float(np.prod(lambdas)) ** (1.0 / len(lambdas))
+
+
+VARIANTS = {
+    "m111213": {"lambdas": (11, 12, 13), "r_ideal": 16.0, "lambda_ref": 12.0,
+                "results": "rect_ideal_grid"},
+    "m111523_r16": {"lambdas": (11, 15, 23), "r_ideal": 16.0,
+                    "lambda_ref": round(_gm_period((11, 15, 23)), 4),
+                    "results": "rect_ideal_grid_m111523_r16"},
+    "m111523_rs": {"lambdas": (11, 15, 23),
+                   "r_ideal": round(16.0 * _gm_period((11, 15, 23)) / _gm_period((11, 12, 13)), 4),
+                   "lambda_ref": round(_gm_period((11, 15, 23)), 4),
+                   "results": "rect_ideal_grid_m111523_rs"},
+}
+DEFAULT = "m111213"
+
+
+def npos(variant: str = DEFAULT) -> int:
+    return int(np.prod(VARIANTS[variant]["lambdas"]))
+
+
+# Kept for callers written before the variants (the original grid).
+NPOS = npos(DEFAULT)
+LAMBDAS = VARIANTS[DEFAULT]["lambdas"]
+LAMBDA_REF = VARIANTS[DEFAULT]["lambda_ref"]
+R_IDEAL = VARIANTS[DEFAULT]["r_ideal"]
+
+
 # --- the ideal kernel --------------------------------------------------------
 
-def _p_round(r: float, nmax: int | None = None) -> tuple[np.ndarray, np.ndarray]:
-    sigma = NPOS / (2.0 * math.pi * r)
-    nmax = nmax or int(math.ceil(12 * sigma)) + 2
+def _p_round(r: float, N: int) -> tuple[np.ndarray, np.ndarray]:
+    sigma = N / (2.0 * math.pi * r)
+    nmax = int(math.ceil(12 * sigma)) + 2
     n = np.arange(-nmax, nmax + 1)
     p = ndtr((n + 0.5) / sigma) - ndtr((n - 0.5) / sigma)
     return n, p / p.sum()
 
 
-def ideal_kernel(r: float, d) -> np.ndarray:
-    """Expected ideal similarity at axis offset d (cells), for kernel radius r."""
-    n, p = _p_round(r)
+def ideal_kernel(r: float, d, N: int = NPOS) -> np.ndarray:
+    """Expected ideal similarity at axis offset d (cells), for kernel radius r on an N scaffold."""
+    n, p = _p_round(r, N)
     d = np.atleast_1d(np.asarray(d, dtype=float))
-    return (p[None, :] * np.cos(2 * math.pi * np.outer(d, n) / NPOS)).sum(1)
+    return (p[None, :] * np.cos(2 * math.pi * np.outer(d, n) / N)).sum(1)
 
 
 def half_width(kernel, lo: float = 0.0, hi: float = 400.0) -> float:
@@ -96,11 +129,12 @@ def rect_kernel_centred(rho: float, f: float) -> float:
     return (h_relu(rho, tau) - h0) / (h1 - h0)
 
 
-def matched_r(f: float) -> float:
-    """r at which the inhibited rectified code's half-width equals the ideal's at r = 16."""
-    d_half = half_width(lambda d: ideal_kernel(R_IDEAL, d))
+def matched_r(f: float, variant: str = DEFAULT) -> float:
+    """r at which the inhibited rectified code's half-width equals the variant's ideal's."""
+    N, r0 = npos(variant), VARIANTS[variant]["r_ideal"]
+    d_half = half_width(lambda d: ideal_kernel(r0, d, N))
     rho_star = brentq(lambda rho: rect_kernel_centred(rho, f) - 0.5, 0.0, 0.999999)
-    return float(brentq(lambda r: float(ideal_kernel(r, d_half)[0]) - rho_star, 1.0, 200.0,
+    return float(brentq(lambda r: float(ideal_kernel(r, d_half, N)[0]) - rho_star, 1.0, 200.0,
                         xtol=1e-6))
 
 
@@ -110,45 +144,61 @@ def f_tag(f: float) -> str:
     return f"f{round(100 * f):02d}"
 
 
-def rect_spec(f: float, D: int, inhib: bool = False) -> str:
-    s = (f"ideal:r={matched_r(f):.4f},n_freq={D // 2},{BASE},relu_mix=1,active={f}")
+def _mods(variant: str) -> str:
+    """The spec's modules key; empty for the original modules, so those specs are unchanged."""
+    if variant == DEFAULT:
+        return ""
+    return ",lambdas=" + "-".join(str(l) for l in VARIANTS[variant]["lambdas"])
+
+
+def rect_spec(f: float, D: int, inhib: bool = False, variant: str = DEFAULT) -> str:
+    s = (f"ideal:r={matched_r(f, variant):.4f},n_freq={D // 2},{BASE}{_mods(variant)},"
+         f"relu_mix=1,active={f}")
     return s + (",center_global=1" if inhib else "")
 
 
-def ideal_spec(D: int) -> str:
-    return f"ideal:r={R_IDEAL:g},n_freq={D // 2},{BASE}"
+def ideal_spec(D: int, variant: str = DEFAULT) -> str:
+    return f"ideal:r={VARIANTS[variant]['r_ideal']:g},n_freq={D // 2},{BASE}{_mods(variant)}"
 
 
-def probe_tasks() -> list[tuple[str, str]]:
+def probe_tasks(variant: str = DEFAULT) -> list[tuple[str, str]]:
     """65 tasks: per D, the signed ideal, then every f plain and with inhibition."""
     out = []
     for D in DS:
-        out.append((ideal_spec(D), f"ideal D{D}"))
+        out.append((ideal_spec(D, variant), f"ideal D{D}"))
         for f in FS:
-            out.append((rect_spec(f, D), f"rect {f_tag(f)} D{D}"))
-            out.append((rect_spec(f, D, inhib=True), f"rect {f_tag(f)} D{D} inh"))
+            out.append((rect_spec(f, D, variant=variant), f"rect {f_tag(f)} D{D}"))
+            out.append((rect_spec(f, D, inhib=True, variant=variant), f"rect {f_tag(f)} D{D} inh"))
     return out
 
 
-def field_tasks() -> list[tuple[str, str]]:
+def field_tasks(variant: str = DEFAULT) -> list[tuple[str, str]]:
     """30 tasks: every (f, D). Fields are the code's own, so inhibition plays no part."""
-    return [(rect_spec(f, D), f"rect {f_tag(f)} D{D}") for D in DS for f in FS]
+    return [(rect_spec(f, D, variant=variant), f"rect {f_tag(f)} D{D}") for D in DS for f in FS]
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) == 2 and argv[0] in ("probe", "field"):
-        tasks = probe_tasks() if argv[0] == "probe" else field_tasks()
+    if argv and argv[0] in ("probe", "field"):
+        variant = argv[2] if len(argv) > 2 else DEFAULT
+        tasks = probe_tasks(variant) if argv[0] == "probe" else field_tasks(variant)
         spec, label = tasks[int(argv[1])]
         print(f"{spec}|{label}")
         return 0
-    d16 = half_width(lambda d: ideal_kernel(R_IDEAL, d))
-    print(f"ideal r=16 half-width {d16:.3f} cells")
+    if argv and argv[0] == "var":
+        variant = argv[2] if len(argv) > 2 else DEFAULT
+        print(npos(variant) if argv[1] == "npos" else VARIANTS[variant][argv[1]])
+        return 0
+    variant = argv[0] if argv else DEFAULT
+    N, r0 = npos(variant), VARIANTS[variant]["r_ideal"]
+    d0 = half_width(lambda d: ideal_kernel(r0, d, N))
+    print(f"{variant}: modules {VARIANTS[variant]['lambdas']}, Npos {N}, "
+          f"lambda_ref {VARIANTS[variant]['lambda_ref']}, ideal r={r0:g} half-width {d0:.3f} cells")
     for f in FS:
-        r = matched_r(f)
-        rho = ideal_kernel(r, d16)[0]
+        r = matched_r(f, variant)
+        rho = ideal_kernel(r, d0, N)[0]
         print(f"{f_tag(f)}  r={r:7.3f}  ideal sim at d_half {rho:.4f}  "
               f"rect centred {rect_kernel_centred(rho, f):.4f}")
-    print(f"{len(probe_tasks())} probe tasks, {len(field_tasks())} field tasks")
+    print(f"{len(probe_tasks(variant))} probe tasks, {len(field_tasks(variant))} field tasks")
     return 0
 
 

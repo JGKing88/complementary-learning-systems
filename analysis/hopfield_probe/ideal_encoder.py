@@ -378,6 +378,9 @@ def parse_ideal_spec(spec: str) -> dict:
         if k == "rot_seed":
             kw[k] = int(v)
             continue
+        if k == "lambdas":                       # grid modules, e.g. lambdas=11-15-23
+            kw[k] = tuple(int(x) for x in v.split("-"))
+            continue
         if k not in ("r", "n_freq", "seed", "gain"):
             raise ValueError(f"unknown ideal-encoder key {k!r} in {spec!r}")
         kw[k] = int(v) if k in ("n_freq", "seed") else float(v)
