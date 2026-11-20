@@ -2172,10 +2172,34 @@ help (revisit 0.33). Offline with agent-like movement
 its c before an arrival reaches 0.95; `ft` holds 3.4 goals (2.5 with
 detours) but its c before an arrival rises to 0.46.
 
-In progress: both memories fine-tuned on agent-like movement
-(`train_protocol.py --motion continuous`, from `ft` at update 43.5k and
-`scratch` at 39k, strict curriculum from 2 arenas, 30k updates; outputs
-`protocol_h2048_motion_{ft,scratch}_s0`), then the zero-shot agent again.
+Fine-tuning on agent-like movement (`train_protocol.py --motion continuous`,
+from `scratch` at update 39k with the curriculum from 2 arenas,
+`protocol_h2048_motion_scratch_s0`; from `ft` at 43.5k at 6 arenas without
+a curriculum, `protocol_h2048_motion6_ft_s0`, after a curriculum run from 2
+arenas lost its multi-goal storage while stuck at 2). Offline under that
+movement the `scratch` fine-tune holds 2.7, 3.5 and 3.8 goals at updates
+2k, 6k and 8k (5 arenas trained); the `ft` fine-tune falls from 3.0 at 2k
+to 2.2 at 6k.
+
+The zero-shot agent with the `scratch` fine-tune at update 8.5k still
+fails: first visit 0.68, revisit 0.26 in 83 steps. Logged along the
+agent's own path, its decoded goal is within 1.5 cells on 22% of far reads
+even with one arena (d still points roughly right, cosine 0.83, so arena 0
+succeeds at 0.95), and on about 0% from block 1 on. Offline the same
+memory holds about 3.8 goals. What remains between the scripted movement
+and the agent's is not yet pinned down; the agent samples its actions
+(the protocol's sampled policy) and, once a read is wrong, wanders up to
+the 200-step cap, which no training path does.
+
+Reading. An activity memory is brittle to how the agent moves while it
+holds goals: every step of input changes the state, so a memory trained on
+one movement distribution fails on another, and in closed loop a wrong
+read makes the agent wander, which feeds more off-distribution input. A
+table (idea 1) changes only at the store and reads by matching the view,
+so the agent's movement between stores does not touch what it holds.
+Making idea 4 work as an agent would need its memory trained on the
+agent's own trajectories (recorded from the agent, then iterated with
+idea 4's own agent, as DAgger), or trained jointly with the controller.
 
 ## 8. Decisions and open items
 
