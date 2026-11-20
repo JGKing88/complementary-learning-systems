@@ -310,3 +310,23 @@ All f are in `hpc_results_<variant>.json` and on the page.
 * **50% is not reachable with the one-hot input.** About 40% of the weights are pruned to zero, so
   about 6% of (cell, place) pairs have input exactly 0; theta = 0 gives 47.3% (11, 12, 13) and 47.0%
   (11, 15, 23) active (`matched_thresh` snaps to 0; the page shows the fraction actually active).
+
+## Page: one threshold slider (2026-11-20)
+
+The page's sparsity menus are replaced by one slider, share of cells active, 1% to 60% in 0.5% steps,
+for every population. The rectified ideal and both hippocampus populations apply it as their own
+threshold; the others get relu(y - theta) after the fact, with theta the value their outputs exceed
+that share of the time over every unit at 2048 sample places (a checkbox turns this off).
+
+* Rectified ideal: t = Phi^-1(1 - f) / sqrt(D). Its "Kernel r" menu either matches r to the slider
+  (`rect_manifest_<variant>.json` `r_table`, `codes.matched_r` at every slider position, rounded to 4
+  decimals like the specs) or fixes it at the r matched for one computed share. A code at a new r is
+  rebuilt in the browser: `draw_frequencies` is rint(sigma g) with g the seed-0 standard normals
+  (`rect_gauss.b64.txt`; legacy `RandomState.normal` is loc + scale * gauss), so the page needs no
+  Python per r. The load check confirms the browser rebuilds all six computed codes exactly
+  (frequencies, threshold, r) before it checks the maps against Python.
+* Hippocampus: theta from `hpc_manifest_<variant>.json` `thresh_table`, `matched_thresh` at every
+  slider position (exact by CRT), with the share actually reached (the one-hot layer plateaus at
+  theta = 0 from 47% to 53%).
+* Whole-scaffold statistics and probe results exist only at the six computed shares; the results
+  panel marks the one nearest the slider.
