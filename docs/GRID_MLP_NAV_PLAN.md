@@ -2213,6 +2213,61 @@ Making idea 4 work as an agent would need its memory trained on the
 agent's own trajectories (recorded from the agent, then iterated with
 idea 4's own agent, as DAgger), or trained jointly with the controller.
 
+### 7b.15 Training agents around idea 4's memory (plan, 2026-11-20)
+
+§7b.14 put a frozen idea 4 memory into a controller trained for a
+different memory (idea 1's table), and it failed. That is not a fair test.
+Here each arm trains the agent around idea 4's memory, and one arm asks
+whether the same RL that trains the other ideas can learn the memory
+itself, with no supervised memory loss (Jack, 2026-11-20).
+
+Arms.
+1. Idea 1's controller fine-tuned by PPO around the frozen, supervised
+   memory.
+2. A controller trained from scratch by PPO around the frozen, supervised
+   memory.
+3. Memory and controller trained together from scratch by PPO alone. The
+   question: can this type of memory be learned without being taught?
+4. The supervised memory as the starting point, unfrozen, trained with the
+   controller by PPO. Separates "RL can adapt the memory to the agent's
+   movement" from "RL can learn the memory from nothing".
+
+Common to all arms.
+- The module boundary of §7b.14. Each step the memory reads the live view
+  on the direction-aligned canvas, the agent's own grid phases and the
+  oracle store flag (the store every idea uses), and returns goal phases
+  and a confidence logit. The controller receives d and c on idea 1's
+  channels. d comes from the goal phases through the frozen grid MLP.
+- The task idea 1 faces: continuous movement, goal radius 1, oracle store.
+  If the frozen arms fail on movement, cardinal steps are a later variant.
+- Training regime: idea 3's lifetime stage (`lifetime:N,envs=E,iters=K`,
+  `rollout/lifetime.py`), a small continual protocol per row with the
+  memory state carried through the lifetime, so the memory holds several
+  goals. Arenas move across the scaffold every update (`_rp`).
+- Test: the continual protocol scored as §10.8 (6 recorded envs, 40
+  iterations, 200-step cap, sampled), against idea 1 (revisit 1.000 in
+  12.85 steps) and Agent-HaSH (0.997 in 15.6); in training,
+  `evaluate_lifetime`.
+
+Memories and sizes. The frozen arms and arm 4's start use the scratch
+protocol memory fine-tuned on agent-like movement
+(`protocol_h2048_motion_scratch_s0`, LSTM 2048). Arm 3 starts from random
+weights at a width that backpropagation through 200-step rollouts can
+afford (512 to 1024).
+
+Engineering.
+- A batched recurrent memory (one state for all rows) stepped in the
+  rollout and lifetime collectors, with the store flag set before the read
+  and a copy of the state for the truncation read.
+- For arms 3 and 4, the memory inside the policy's forward, so PPO replays
+  it from a zero state over each packed trajectory (as idea 3's GRU) and
+  backpropagates into it; and a differentiable read: the expected grid code
+  over the arena's cells, weighted by a softmax of phase match, into the
+  frozen grid MLP, in place of the best-cell pick.
+
+Order: the frozen path first (arms 1 and 2), then the trainable path (arms
+3 and 4).
+
 ## 8. Decisions and open items
 
 | | |
