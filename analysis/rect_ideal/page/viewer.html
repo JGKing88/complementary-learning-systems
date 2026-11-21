@@ -84,6 +84,9 @@ input[type="checkbox"] { accent-color: var(--ring); }
 .xy { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 6px; align-items: center; }
 .xy input { width: 100%; }
 .hint { font-size: 0.76rem; color: var(--muted); }
+.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; margin: 0; font-size: 0.76rem; color: var(--muted); }
+.kv dt { color: var(--fg); font-weight: 500; }
+.kv dd { margin: 0; }
 .row.off { opacity: 0.45; }
 canvas.minimap { width: 100%; aspect-ratio: 1; border-radius: 6px; touch-action: none; cursor: crosshair; display: block; }
 button.plain {
@@ -175,11 +178,22 @@ table.heat .cell.na { background: var(--surface-2); color: var(--muted); }
           <div class="row"><label for="rect-D">Units</label><select id="rect-D" class="grow"></select></div>
           <div class="row"><label for="rect-r">Kernel r</label><select id="rect-r" class="grow"></select></div>
         </div>
-        <p class="hint" id="rect-hint" hidden>Each code is the ideal code with half as many waves as units, rotated by a fixed Walsh-Hadamard matrix, thresholded so the slider's share of units is active at every place, and scaled to unit length. Rectifying narrows the population kernel, more so when sparser, so the kernel radius r that keeps it as wide as the unrectified ideal's (after one inhibition constant is removed) depends on the share. "Matched to the slider" redraws the code at that r for every slider position (the same random draw, rescaled), which recomputes the maps; "fixed" keeps one code's r and only moves the threshold, which is instant. The ideal code depends on the grid modules only through the scaffold size: 11 × 12 × 13 = 1716 cells, 11 × 15 × 23 = 3795. On the larger scaffold the arena's coordinates are read on it, and the map above shows its first 1716 cells. "r scaled" widens the kernel by the modules' geometric-mean period (15.6 cells against 12.0). 4096-unit codes take a few seconds per arena; use a smaller arena to drag smoothly.</p>
+        <dl class="kv" id="rect-hint" hidden>
+          <dt>Code</dt><dd>The ideal code with half as many waves as units, rotated by a fixed Walsh-Hadamard matrix: relu(Q z − t), scaled to unit length at each place.</dd>
+          <dt>Threshold</dt><dd>t is set by the slider, so that share of units is active at every place.</dd>
+          <dt>Kernel r</dt><dd>Rectifying narrows the population kernel, more so when sparser. "Matched" redraws the code at the r that keeps the kernel as wide as the unrectified ideal's, which recomputes the maps at each slider step. "Fixed" keeps one code's r and only moves the threshold, which is instant.</dd>
+          <dt>Modules</dt><dd>The code depends on them only through the scaffold size: 1716 cells for 11, 12, 13 and 3795 for 11, 15, 23. "r scaled" widens the kernel by the larger modules' period (15.6 against 12.0 cells). On the larger scaffold the map above shows its first 1716 cells.</dd>
+          <dt>Speed</dt><dd>4096 units take a few seconds per arena; use a smaller arena to drag smoothly.</dd>
+        </dl>
         <div class="rectsel" id="vhpc-row" hidden>
           <div class="row"><label for="vhpc-v">Modules</label><select id="vhpc-v" class="grow"></select></div>
         </div>
-        <p class="hint" id="vhpc-hint" hidden>Vector-HaSH's place layer, relu(Wpg g − θ), on the one-hot grid code (Hippocampus) or on the smoothed grid code the encoder reads (smoothed input, folded into the weights): 400 cells, Wpg Gaussian with about half the entries pruned (seed 0), drawn as build_scaffold draws it. Each module set has its own Wpg (434 grid inputs for 11, 12, 13; 875 for 11, 15, 23). θ is the one threshold that makes the slider's share of cells active, on average over the whole scaffold (exact), so cells differ in how much they fire.</p>
+        <dl class="kv" id="vhpc-hint" hidden>
+          <dt>Model</dt><dd>Vector-HaSH's place layer, relu(Wpg g − θ): 400 cells, Wpg Gaussian with about half the entries pruned (seed 0), drawn as build_scaffold draws it.</dd>
+          <dt>Input</dt><dd>Hippocampus reads the one-hot grid code, as the model does. Smoothed input reads the smoothed grid code the encoder reads.</dd>
+          <dt>Threshold</dt><dd>One θ for the whole layer, set by the slider so that share of cells is active on average over the whole scaffold (exact). Cells differ in how much they fire.</dd>
+          <dt>Modules</dt><dd>Each module set has its own Wpg: 434 grid inputs for 11, 12, 13 and 875 for 11, 15, 23.</dd>
+        </dl>
         <div class="row" id="band-row" hidden>
           <label for="band">Remove slow waves</label>
           <select id="band" class="grow"></select>
@@ -194,9 +208,10 @@ table.heat .cell.na { background: var(--surface-2); color: var(--muted); }
           <input type="range" class="grow" id="thr" min="1" max="60" step="0.5" value="10">
           <span class="out" id="thr-out">10%</span>
         </div>
-        <div class="row"><input type="checkbox" id="thr-others" checked><label for="thr-others">Also threshold populations without their own</label></div>
         <p class="hint" id="thr-hint"></p>
-        <p class="hint">One threshold for the whole layer, set so this share of cells is active. The rectified ideal and the hippocampus populations apply it as their own threshold. The others get relu(y − θ) after the fact, with θ the value their outputs exceed this share of the time over 2048 sample places. The grid results below exist only at 2, 5, 10, 20, 35 and 50%; they mark the one nearest the slider.</p>
+        <div class="row" id="thr-others-row"><input type="checkbox" id="thr-others" checked><label for="thr-others">Threshold this population with the slider</label></div>
+        <p class="hint" id="thr-others-hint">This population has no threshold of its own. Checked: it shows relu(y − θ), with θ set so the slider's share of its units is active (from its outputs at 2048 sample places). Unchecked: it shows its own output and the slider does not affect it. The setting applies to every population of this kind.</p>
+        <p class="hint">The grid results below exist only at 2, 5, 10, 20, 35 and 50%; they show the one nearest the slider.</p>
       </section>
 
       <section class="panel" aria-labelledby="t-arena">
@@ -936,22 +951,24 @@ function ensureSample(pop) {
     .catch(e => { pop._sampling = null; pop._sampleErr = errText(e); renderThrHint(); });
 }
 function renderThrHint() {
-  const pop = st.pops[st.popKey], f = st.thr.f, pct = x => (100 * x).toFixed(1) + "%";
-  $("thr-out").textContent = (100 * f).toFixed(1).replace(/\.0$/, "") + "%";
+  const pop = st.pops[st.popKey], f = st.thr.f, pct = x => (100 * x).toFixed(1).replace(/\.0$/, "") + "%";
+  $("thr-out").textContent = pct(f);
+  const own = !pop || OWN_THRESH.includes(pop.key);
+  $("thr-others-row").hidden = own; $("thr-others-hint").hidden = own;
   let txt = "";
   if (!pop) txt = "";
   else if (pop.key === "rect") {
     const c = pop.code(), now = rectNow(st.RM, c);
-    txt = "Rectified ideal: t = " + now.t.toFixed(5) + " on Q z, r = " + now.r.toFixed(2) + " cells (" +
-      (st.rect.match ? "matched to " + pct(f) : "fixed: matched for " + pct(c.f)) + ").";
+    txt = "Here: threshold t = " + now.t.toFixed(4) + " on Q z, kernel r = " + now.r.toFixed(2) + " cells (" +
+      (st.rect.match ? "matched to " + pct(f) : "fixed at the r matched for " + pct(c.f)) + ").";
   } else if (HPC_POPS.includes(pop.key)) {
     const { V } = pop.code(), h = hpcTheta(V.HM, f);
-    txt = pop.meta.label + ": θ = " + h.theta.toFixed(3) + ", " + pct(h.active) + " of cells active on average over the scaffold" +
-      (Math.abs(h.active - f) > 0.0015 ? " (the nearest this layer reaches: about 6% of cell-place inputs are exactly 0)" : "") + ".";
-  } else if (!st.thr.others) txt = pop.meta.label + ": not thresholded (raw output).";
-  else if (pop._sample) txt = pop.meta.label + ": relu(y − θ), θ = " + fmtVal(genericCut(pop)) + ".";
-  else if (pop._sampleErr) txt = pop.meta.label + ": could not sample its outputs (" + pop._sampleErr + "), so it is shown unthresholded.";
-  else txt = pop.meta.label + ": finding θ from 2048 sample places…";
+    txt = "Here: θ = " + h.theta.toFixed(3) + ", which makes " + pct(h.active) + " of cells active on average over the scaffold" +
+      (Math.abs(h.active - f) > 0.0015 ? ", the nearest this layer reaches (about 6% of its inputs are exactly 0)" : "") + ".";
+  } else if (!st.thr.others) txt = "Here: not thresholded; the slider does not affect this population.";
+  else if (pop._sample) txt = "Here: relu(y − θ) with θ = " + fmtVal(genericCut(pop)) + ".";
+  else if (pop._sampleErr) txt = "Here: could not sample this population's outputs (" + pop._sampleErr + "), so it is shown unthresholded.";
+  else txt = "Here: finding θ from 2048 sample places…";
   $("thr-hint").textContent = txt;
 }
 // The slider moved: the rectified code's reference sparsity follows when r is matched, the
@@ -992,10 +1009,9 @@ function makeRect(RM) {
     code: cur,
     refresh() {
       const c = cur(), now = rectNow(RM, c);
-      meta.description = (100 * now.f).toFixed(1).replace(/\.0$/, "") + "% of " + c.D + " units active at each place: relu(Q z − t) scaled to unit length, " +
-        "with z the ideal code of " + c.n_freq + " waves at kernel radius r = " + now.r.toFixed(2) + " cells (" +
-        (st.rect.match ? "matched to this share" : "fixed at the r matched for " + Math.round(100 * c.f) + "%") + ") and Q the fixed " +
-        c.D + "-unit Walsh-Hadamard rotation. Grid modules " + modulesText(RM) + ", a " + RM.npos + "-cell scaffold.";
+      meta.description = [(100 * now.f).toFixed(1).replace(/\.0$/, "") + "% of units active at each place",
+        c.n_freq + " waves", "r = " + now.r.toFixed(2) + " cells (" + (st.rect.match ? "matched" : "fixed at " + Math.round(100 * c.f) + "%") + ")",
+        "modules " + modulesText(RM) + " (" + RM.npos + "-cell scaffold)"].join(" · ") + ".";
     },
     label(u) { return "unit " + u; },
     info(u) {
@@ -1056,10 +1072,9 @@ function makeHpcPop(key) {
     get n() { return hpcVar(key).HM.Np; },
     refresh() {
       const { V } = cur(), h = hpcTheta(V.HM, st.thr.f);
-      meta.description = "Vector-HaSH's place layer, relu(Wpg g − θ), on the " +
-        (smooth ? "smoothed grid code (bumps of FWHM " + V.HM.fwhm + " of each period, the encoder's input; folded into Ws = Wpg B)" : "one-hot grid code, as the model builds it") +
-        ", modules " + V.HM.lambdas.join(", ") + " (" + V.HM.Ng + " grid inputs, " + V.HM.Np + " cells). θ = " + h.theta.toFixed(3) + " makes " +
-        (100 * h.active).toFixed(1) + "% of cells active, on average over the " + V.HM.npos + "-cell scaffold.";
+      meta.description = [(smooth ? "smoothed grid input (FWHM " + V.HM.fwhm + " of each period)" : "one-hot grid input"),
+        "θ = " + h.theta.toFixed(3) + ", " + (100 * h.active).toFixed(1) + "% of cells active on average",
+        "modules " + V.HM.lambdas.join(", ") + " (" + V.HM.Ng + " grid inputs, " + V.HM.npos + "-cell scaffold)"].join(" · ") + ".";
     },
     label(u) { return "cell " + u; },
     info(u) {
