@@ -137,6 +137,9 @@ class Field:
     noise: float = 0.0
     noise_basis: bool = False
     noise_seed: int = 0
+    # direction readout: the local basis is the centred difference of the code over
+    # +- basis_step cells when basis_step > 1; 1 is production's one-cell forward difference
+    basis_step: int = 1
 
     def __post_init__(self):
         self._rng = np.random.default_rng(self.noise_seed)
@@ -185,9 +188,14 @@ class Field:
         gy = np.clip(positions[:, 1] + offset[1], 1, self.Npos - 2)
 
         nb = self.noise_basis
-        current = self.encode(gx, gy, noisy=nb)
-        d_fwd = self.encode(gx, gy + 1, noisy=nb) - current           # North, +y
-        d_rgt = self.encode(gx + 1, gy, noisy=nb) - current           # East,  +x
+        s = int(self.basis_step)
+        if s > 1:
+            d_fwd = self.encode(gx, gy + s, noisy=nb) - self.encode(gx, gy - s, noisy=nb)
+            d_rgt = self.encode(gx + s, gy, noisy=nb) - self.encode(gx - s, gy, noisy=nb)
+        else:
+            current = self.encode(gx, gy, noisy=nb)
+            d_fwd = self.encode(gx, gy + 1, noisy=nb) - current       # North, +y
+            d_rgt = self.encode(gx + 1, gy, noisy=nb) - current       # East,  +x
 
         if not swap_gram_schmidt:
             return gram_schmidt_2d_batch(d_fwd, d_rgt)

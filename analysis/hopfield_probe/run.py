@@ -90,6 +90,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "encoded (stored goals and cues); 0 = clean (default)")
     g.add_argument("--grid_noise_basis", action="store_true",
                    help="also add --grid_noise to the direction readout's local basis")
+    g.add_argument("--basis_step", type=int, default=1,
+                   help="direction readout: centred difference of the code over +- this many "
+                        "cells (1 = production's one-cell forward difference)")
     g.add_argument("--device", default="cpu")
 
     d = p.add_argument_group("recall dynamics")
@@ -226,7 +229,8 @@ def main(argv: list[str] | None = None) -> int:
                       fwhm_ratio=fwhm, gain=gain, Npos=cfg.Npos,
                       device=cfg.device, chunk=cfg.chunk,
                       noise=args.grid_noise, noise_basis=args.grid_noise_basis,
-                      noise_seed=args.seed + 7)
+                      noise_seed=args.seed + 7, basis_step=args.basis_step)
+        header["basis_step"] = int(args.basis_step)
         header["grid_noise"] = float(args.grid_noise)
         header["grid_noise_basis"] = bool(args.grid_noise_basis)
         prod = int(np.prod(mcfg.lambdas))

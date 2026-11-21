@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Hopfield navigation probe (run_ideal.sh settings, Hebbian storage, whole arena) for the codes
 # listed in analysis/field_kernel/sets/<SET>.txt, one "spec|label" per line. BASE in a spec
-# expands to n_freq=512,seed=0,gain=100,relu_mix=1.
+# expands to n_freq=512,seed=0,gain=100,relu_mix=1 (B2048 and B4096: the same with more waves).
+# An optional third field holds extra run.py flags, e.g. "--basis_step 4".
 #
 #   scripts/snapshot_code.sh <tag>                                # commit first
 #   SET=a CODE=<tag> bash analysis/field_kernel/run_probe.sh [ARRAY]
@@ -30,8 +31,10 @@ cd "$WT"
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
 i=$SLURM_ARRAY_TASK_ID
 echo "host $(hostname)  code $CODE  $(cat GIT_COMMIT)"
-IFS='|' read -r CK label <<< "${ENCS[$i]}"
+IFS='|' read -r CK label extra <<< "${ENCS[$i]}"
 CK=${CK/BASE/n_freq=512,seed=0,gain=100,relu_mix=1}
+CK=${CK/B2048/n_freq=2048,seed=0,gain=100,relu_mix=1}
+CK=${CK/B4096/n_freq=4096,seed=0,gain=100,relu_mix=1}
 REG=()
 [[ -n "$REGION" ]] && REG=(--world_region $REGION)
 
@@ -41,6 +44,6 @@ REG=()
     --steps 1 2 3 5 10 15 --env_size 20 --Npos 1716 \
     --n_alias 5000 --n_cont_samples 60000 --n_cont_annulus 20000 \
     --seed 0 --device cpu --fwhm_fallback 0.25 \
-    --storage_rule hebb \
+    --storage_rule hebb ${extra:-} \
     --out "$OUT/t$i"
 echo "DONE probe $i  $label -> $OUT/t$i"
