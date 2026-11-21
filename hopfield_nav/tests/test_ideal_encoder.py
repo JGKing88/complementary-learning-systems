@@ -187,3 +187,19 @@ def test_loader_resolves_binary_and_default_is_unchanged():
     assert cfg.output_nonlinearity == "sign"
     enc0, _c, *_r, h0 = load_probe_encoder("ideal:r=32")
     assert not enc0.binary and "binary" not in h0["ideal"]
+
+
+def test_symmetric_harmonics_same_clean_code_smaller_harmonics():
+    """``sym=1`` picks j - l for j > l/2: the clean code is unchanged, every
+    harmonic magnitude is at most l/2 (so phase noise is amplified less)."""
+    from analysis.hopfield_probe.ideal_encoder import IdealEncoder, parse_ideal_spec
+    from analysis.hopfield_probe.rp_encoder import grid_codes_torch
+    assert parse_ideal_spec("ideal:r=16,sym=1")["symmetric"] is True
+    a, b = IdealEncoder(r=16), IdealEncoder(r=16, symmetric=True)
+    xs = torch.arange(0, 1716, 37)
+    g = grid_codes_torch(xs, (xs * 7) % 1716, [11, 12, 13], 0.10).double()
+    assert torch.allclose(a(g), b(g), atol=1e-9)
+    for row in range(b.harmonics.shape[0]):
+        l = b.lambdas[row // 2]
+        assert float(b.harmonics[row].abs().max()) <= l / 2
+    assert float(b.harmonics.abs().mean()) < float(a.harmonics.abs().mean())

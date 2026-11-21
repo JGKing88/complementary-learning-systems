@@ -318,8 +318,10 @@ def basin_probe(
     if cx.size == 0:
         return {}
 
-    cells = field.encode(cx, cy)
-    bank = basin_bank(cells, mem, env)
+    cells = field.encode(cx, cy)                     # the cues (noisy under --grid_noise)
+    # the disc part of the bank is the ruler, clean under test-time noise
+    ruler = field.encode(cx, cy, noisy=False) if getattr(field, "noise", 0) > 0 else cells
+    bank = basin_bank(ruler, mem, env)
     goal_row = int(np.flatnonzero(d == 0.0)[0])
 
     steps = list(steps if steps is not None else cfg.steps)

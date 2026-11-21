@@ -54,6 +54,23 @@ exactly, e.g. ``sin(0)``) are sent to +1 through a 1e-9 tie band, so the module
 and ``closed_form`` agree bit-for-bit on the sign. Per-frequency ``weights``
 are ignored by the sign (every coordinate gets the same magnitude).
 
+``relu_mix=True`` (spec ``relu_mix=1``) makes the code non-negative: the 1024 units are remixed by
+a fixed orthogonal matrix ``Q = H D3 H D2 H D1 / D^1.5`` (``H`` the Sylvester Walsh-Hadamard
+matrix, ``D_t`` random signs from ``np.random.default_rng(rot_seed)``, the same rotation as the
+tuning viewer's "Ideal, rotated"), rectified and renormalised: ``relu(Q z) / |relu(Q z)|``. Each
+unit mixes every wave, so across units ``(Q z)(p)`` and ``(Q z)(q)`` behave like Gaussians with
+correlation ``k(p - q)`` and the similarity is the arc-cosine transform
+``(sqrt(1 - k^2) + (pi - arccos k) k) / pi = 1/pi + k/2 + k^2/(2 pi) + ...``: a floor of 1/pi plus a
+near-Gaussian peak. ``center=True`` (spec ``center=1``, needs ``relu_mix``) then subtracts the
+code's mean vector ``mu`` (each unit's mean over 65,536 random scaffold cells) and renormalises.
+For the linear probe memory this is the same as keeping the activity non-negative and removing
+the mean in the memory (covariance storage ``sum (z - mu)(z - mu)^T``, a cue minus ``mu``, and
+readouts against ``z - mu``), up to the final renormalisation. ``center_global=True`` subtracts one
+constant, the mean of ``mu`` over units, from every unit instead (uniform inhibition).
+``active=f`` raises the threshold to ``t = Phi^-1(1 - f) / sqrt(D)``: every position's ``Q z`` has
+mean square exactly ``1/D`` over units and is close to Gaussian, so about a fraction ``f`` of units
+are active at each place (``f = 0.5`` is the plain ReLU).
+
 Layout convention: block row ``i * l + j`` with ``i`` the x phase, ``j`` the y
 phase, as ``encode.grid_codes`` builds it.
 """
@@ -82,15 +99,27 @@ def crt_harmonics(n: np.ndarray, lambdas) -> np.ndarray:
     return np.stack(out, axis=0)
 
 
-def draw_frequencies(r: float, n_freq: int, seed: int, npos: int) -> np.ndarray:
-    """``(n_freq, 2)`` int64 frequency vectors in ``(-npos/2, npos/2]``."""
+def draw_frequencies(r: float, n_freq: int, seed: int, npos: int,
+                     nmin: float = 0.0) -> np.ndarray:
+    """``(n_freq, 2)`` int64 frequency vectors in ``(-npos/2, npos/2]``.
+
+    ``nmin > 0`` removes the slow waves: candidates with ``|n| < nmin`` are rejected and the
+    draw continues from the same stream until ``n_freq`` are kept, so the kept set is the
+    ``nmin = 0`` set's fast waves plus faster replacements. ``nmin = 0`` is the original draw.
+    """
     sigma = npos / (2.0 * math.pi * float(r))
     rng = np.random.RandomState(int(seed))
-    n = np.rint(rng.normal(0.0, sigma, size=(int(n_freq), 2))).astype(np.int64)
     half = npos // 2
-    # Reduce mod npos into (-half, half] (npos even here; odd works too).
-    n = np.mod(n + half - 1, npos) - (half - 1)
-    return n
+    kept, total = [], 0
+    while total < int(n_freq):
+        n = np.rint(rng.normal(0.0, sigma, size=(int(n_freq), 2))).astype(np.int64)
+        # Reduce mod npos into (-half, half] (npos even here; odd works too).
+        n = np.mod(n + half - 1, npos) - (half - 1)
+        if nmin > 0:
+            n = n[np.hypot(n[:, 0], n[:, 1]) >= nmin]
+        kept.append(n)
+        total += len(n)
+    return np.concatenate(kept)[:int(n_freq)]
 
 
 @dataclass
@@ -116,9 +145,31 @@ class IdealEncoder(torch.nn.Module):
                  lambdas=DEFAULT_LAMBDAS, gain: float = 100.0,
                  weights: str | np.ndarray | None = None,
                  freqs: str | np.ndarray | None = None,
-                 binary: bool = False):
+                 binary: bool = False, symmetric: bool = False,
+                 relu_mix: bool = False, center: bool = False, rot_seed: int = 0,
+                 center_global: bool = False, active: float = 0.5, nmin: float = 0.0):
         super().__init__()
         self.binary = bool(binary)
+        self.relu_mix = bool(relu_mix)
+        self.center = bool(center)
+        self.rot_seed = int(rot_seed)
+        self.center_global = bool(center_global)
+        self.active = float(active)
+        self.nmin = float(nmin)
+        if (self.center or self.center_global or self.active != 0.5) and not self.relu_mix:
+            raise ValueError("center, center_global and active need relu_mix=1")
+        if self.center and self.center_global:
+            raise ValueError("center and center_global are alternatives")
+        if not 0.0 < self.active < 1.0:
+            raise ValueError("active must be a fraction in (0, 1)")
+        if self.binary and self.relu_mix:
+            raise ValueError("binary and relu_mix are separate arms")
+        # symmetric: use the harmonic representative j - l for j > l/2, so each
+        # decoded phase is multiplied by |j| <= l/2 instead of up to l - 1. The
+        # clean code is identical (the phases are exact multiples of 2 pi / l);
+        # phase noise is amplified about half as much. Off by default so older
+        # results reproduce.
+        self.symmetric = bool(symmetric)
         # Optional per-frequency weights a_i >= 0 (e.g. a least-squares fit for
         # this draw): wave i is scaled by sqrt(a_i / sum a), so z.z' =
         # sum_i a_i cos(omega_i . Delta) / sum a. None = equal weights.
@@ -142,7 +193,7 @@ class IdealEncoder(torch.nn.Module):
         # subset of a larger table) in place of the Gaussian draw.
         self.freqs_path = freqs if isinstance(freqs, str) else None
         if freqs is None:
-            freqs = draw_frequencies(self.r, self.n_freq, self.seed, self.npos)
+            freqs = draw_frequencies(self.r, self.n_freq, self.seed, self.npos, self.nmin)
         else:
             freqs = np.load(freqs) if isinstance(freqs, str) else np.asarray(freqs)
             freqs = np.rint(freqs).astype(np.int64)
@@ -154,6 +205,10 @@ class IdealEncoder(torch.nn.Module):
         J = np.empty((2 * len(self.lambdas), self.n_freq), dtype=np.float64)
         J[0::2] = jx
         J[1::2] = jy
+        if self.symmetric:
+            for row in range(J.shape[0]):
+                l = self.lambdas[row // 2]
+                J[row] = np.where(J[row] > l / 2, J[row] - l, J[row])
         self.register_buffer("freqs", torch.from_numpy(freqs))
         self.register_buffer("harmonics", torch.from_numpy(J))
 
@@ -163,6 +218,27 @@ class IdealEncoder(torch.nn.Module):
             off += l * l
         self._offsets = offs
         self.in_dim = off
+
+        if self.relu_mix:
+            D = self.out_dim
+            signs = np.random.default_rng(self.rot_seed).choice([-1, 1], size=(3, D))
+            self.register_buffer("rot", torch.from_numpy(hadamard_rotation(signs)))
+            self.register_buffer("mu", torch.zeros(D, dtype=torch.float64))
+            from statistics import NormalDist
+            self.thresh = NormalDist().inv_cdf(1.0 - self.active) / math.sqrt(D)
+            if self.center or self.center_global:
+                # mu = mean of the uncentred code relu(Q z - t)/|.| over random scaffold cells
+                saved = (self.center, self.center_global)
+                self.center = self.center_global = False
+                g = np.random.default_rng(12345)
+                xs, ys = g.integers(0, self.npos, 65536), g.integers(0, self.npos, 65536)
+                acc = np.zeros(D)
+                for i in range(0, len(xs), 8192):
+                    acc += self._nonneg(self._waves_np(xs[i:i + 8192], ys[i:i + 8192])).sum(0)
+                mu = acc / len(xs)
+                self.mu_unit_spread = float(mu.std() / mu.mean())
+                self.mu = torch.from_numpy(np.full(D, mu.mean()) if saved[1] else mu)
+                self.center, self.center_global = saved
 
     @property
     def out_dim(self) -> int:
@@ -185,6 +261,23 @@ class IdealEncoder(torch.nn.Module):
                 cols.append(torch.atan2(marg @ s, marg @ c))
         return torch.stack(cols, dim=1)
 
+    def _nonneg(self, z):
+        """``relu(Q z) / |.|``, then ``- mu`` and renormalised if ``center`` (numpy or torch)."""
+        sub = self.center or self.center_global
+        if isinstance(z, torch.Tensor):
+            y = torch.clamp(z @ self.rot.to(z).T - self.thresh, min=0.0)
+            y = y / torch.linalg.norm(y, dim=1, keepdim=True).clamp_min(1e-12)
+            if sub:
+                y = y - self.mu.to(y)
+                y = y / torch.linalg.norm(y, dim=1, keepdim=True).clamp_min(1e-12)
+            return y
+        y = np.maximum(z @ self.rot.cpu().numpy().T - self.thresh, 0.0)
+        y = y / np.maximum(np.linalg.norm(y, axis=1, keepdims=True), 1e-12)
+        if sub:
+            y = y - self.mu.cpu().numpy()
+            y = y / np.maximum(np.linalg.norm(y, axis=1, keepdims=True), 1e-12)
+        return y
+
     def forward(self, codes: torch.Tensor) -> torch.Tensor:
         if codes.shape[-1] != self.in_dim:
             raise ValueError(f"expected (N, {self.in_dim}) grid codes, got "
@@ -194,20 +287,43 @@ class IdealEncoder(torch.nn.Module):
         out = out * torch.cat([self.amp, self.amp]).to(out)
         if self.binary:
             out = _binarize(out)
+        if self.relu_mix:
+            out = self._nonneg(out)
         return out.to(codes.dtype if codes.is_floating_point()
                       else torch.float32)
 
-    def closed_form(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
-        """``cos/sin(2 pi n . p / Npos) / sqrt(n_freq)`` straight from (x, y)."""
+    def _waves_np(self, xs, ys) -> np.ndarray:
+        """The signed code ``cos/sin(2 pi n . p / Npos) * amp`` straight from (x, y)."""
         n = self.freqs.cpu().numpy()
         p = np.stack([np.asarray(xs), np.asarray(ys)], axis=1).astype(np.int64)
         # Integer phase mod Npos first: exact, no float blow-up at large n.p.
         k = np.mod(p @ n.T, self.npos).astype(np.float64)
         theta = 2.0 * math.pi * k / self.npos
         amp = self.amp.cpu().numpy()
-        out = np.concatenate([np.cos(theta), np.sin(theta)], axis=1) \
+        return np.concatenate([np.cos(theta), np.sin(theta)], axis=1) \
             * np.concatenate([amp, amp])
-        return _binarize(out) if self.binary else out
+
+    def closed_form(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+        """``cos/sin(2 pi n . p / Npos) / sqrt(n_freq)`` straight from (x, y)."""
+        out = self._waves_np(xs, ys)
+        if self.binary:
+            return _binarize(out)
+        return self._nonneg(out) if self.relu_mix else out
+
+
+def hadamard_rotation(signs: np.ndarray) -> np.ndarray:
+    """``Q = H D_k ... H D_1 / D^(k/2)``: ``H`` Sylvester (natural order), ``D_t = diag(signs[t])``.
+
+    Same matrix as ``analysis/tuning_viewer/export.py`` (branch worktree-tuning-viewer).
+    """
+    D = signs.shape[1]
+    H = np.array([[1.0]])
+    while H.shape[0] < D:
+        H = np.block([[H, H], [H, -H]])
+    Q = np.eye(D)
+    for s in signs:
+        Q = H @ (s[:, None] * Q)
+    return Q / D ** (len(signs) / 2)
 
 
 # Below this |value| a coordinate counts as a zero of cos/sin and goes to +1.
@@ -250,6 +366,18 @@ def parse_ideal_spec(spec: str) -> dict:
         if k == "binary":
             kw[k] = bool(int(v))
             continue
+        if k == "sym":
+            kw["symmetric"] = bool(int(v))
+            continue
+        if k in ("relu_mix", "center", "center_global"):
+            kw[k] = bool(int(v))
+            continue
+        if k in ("active", "nmin"):
+            kw[k] = float(v)
+            continue
+        if k == "rot_seed":
+            kw[k] = int(v)
+            continue
         if k not in ("r", "n_freq", "seed", "gain"):
             raise ValueError(f"unknown ideal-encoder key {k!r} in {spec!r}")
         kw[k] = int(v) if k in ("n_freq", "seed") else float(v)
@@ -286,6 +414,13 @@ def load_ideal_encoder(spec: str, *, device="cpu",
     if enc.binary:              # only when set, so existing headers are unchanged
         header["ideal"]["binary"] = True
         cfg.output_nonlinearity = "sign"
+    if enc.nmin > 0:
+        header["ideal"]["nmin"] = enc.nmin
+    if enc.relu_mix:
+        header["ideal"].update(relu_mix=True, center=enc.center, rot_seed=enc.rot_seed,
+                               center_global=enc.center_global, active=enc.active)
+        cfg.output_nonlinearity = ("relu_mix_centered" if enc.center or enc.center_global
+                                   else "relu_mix")
     return enc, cfg, enc.gain, float(fwhm), header
 
 

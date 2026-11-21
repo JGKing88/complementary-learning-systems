@@ -21,10 +21,29 @@ class GridEncoder(nn.Module):
     def __init__(self, lambdas: list[int], hidden_dim: int = 512,
                  num_hidden_layers: int = 2, out_dim: int = 128,
                  nonlinearity: str = "gelu", output_nonlinearity: str = "tanh",
-                 gain: float = 1.0, in_dim: int | None = None):
+                 gain: float = 1.0, in_dim: int | None = None,
+                 sparse_active: float = 0.1):
         super().__init__()
         if in_dim is None:
             in_dim = sum(l * l for l in lambdas)
+        # relu_sparse / relu_rank outputs, the forward pass of branch worktree-relu-sparse-encoder
+        # (encoder_training/models.py there), copied so the probe can load those encoders.
+        from statistics import NormalDist
+        nd = NormalDist()
+        self.sparse_active = float(sparse_active)
+        self.sparse_thresh = nd.inv_cdf(1.0 - self.sparse_active)
+        prof = [max(nd.inv_cdf(1.0 - (k + 0.5) / out_dim) - self.sparse_thresh, 0.0) for k in range(out_dim)]
+        prof = torch.tensor(prof, dtype=torch.float32)
+        self.register_buffer("rank_profile", prof / prof.norm(), persistent=False)
+        self.homeo_eta = 0.01
+        if "homeo" in output_nonlinearity:     # only here, so older checkpoints load
+            self.register_buffer("homeo_bias", torch.zeros(out_dim))
+        else:
+            self.homeo_bias = None
+        self.signed_thresh = nd.inv_cdf(1.0 - self.sparse_active / 2)
+        sprof = [max(nd.inv_cdf(1.0 - (k + 0.5) / (2 * out_dim)) - self.signed_thresh, 0.0) for k in range(out_dim)]
+        sprof = torch.tensor(sprof, dtype=torch.float32)
+        self.register_buffer("signed_profile", sprof / sprof.norm(), persistent=False)
         self.out_dim = out_dim
         self.output_nonlinearity = output_nonlinearity
         self.gain = gain
@@ -50,6 +69,32 @@ class GridEncoder(nn.Module):
             z = torch.tanh(g * z)
         elif self.output_nonlinearity == "sigmoid":
             z = torch.sigmoid(g * z)
+        elif self.output_nonlinearity == "signed_rank_homeo":
+            z = (z - z.mean(-1, keepdim=True)) / z.std(-1, keepdim=True, unbiased=False).clamp_min(1e-6)
+            sgn, mag = torch.sign(z), z.abs() - self.homeo_bias
+            soft = F.normalize(sgn * F.relu(mag - self.signed_thresh), p=2, dim=-1)
+            order = mag.argsort(dim=-1, descending=True)
+            hard = torch.zeros_like(z).scatter_(
+                -1, order, self.signed_profile.to(z.dtype).expand_as(z).contiguous()) * sgn
+            if self.training:
+                with torch.no_grad():
+                    self.homeo_bias += self.homeo_eta * ((hard != 0).float().mean(0) - self.sparse_active)
+            z = soft + (hard - soft).detach()
+        elif self.output_nonlinearity in ("relu_sparse", "relu_rank", "relu_rank_homeo"):
+            z = (z - z.mean(-1, keepdim=True)) / z.std(-1, keepdim=True, unbiased=False).clamp_min(1e-6)
+            if self.output_nonlinearity == "relu_rank_homeo":
+                z = z - self.homeo_bias
+            soft = F.normalize(F.relu(z - self.sparse_thresh), p=2, dim=-1)
+            if self.output_nonlinearity == "relu_sparse":
+                z = soft
+            else:
+                order = z.argsort(dim=-1, descending=True)
+                hard = torch.zeros_like(z).scatter_(
+                    -1, order, self.rank_profile.to(z.dtype).expand_as(z).contiguous())
+                if self.output_nonlinearity == "relu_rank_homeo" and self.training:
+                    with torch.no_grad():
+                        self.homeo_bias += self.homeo_eta * ((hard > 0).float().mean(0) - self.sparse_active)
+                z = soft + (hard - soft).detach()
         z = F.normalize(z, p=2, dim=-1)
 
         if squeeze_time:
@@ -146,7 +191,7 @@ def create_encoder(cfg: EncoderModelConfig, device: str | None = None) -> GridEn
             lambdas=cfg.lambdas, hidden_dim=cfg.hidden_dim,
             num_hidden_layers=cfg.num_hidden_layers, out_dim=cfg.out_dim,
             nonlinearity=cfg.nonlinearity, output_nonlinearity=cfg.output_nonlinearity,
-            gain=cfg.gain,
+            gain=cfg.gain, sparse_active=getattr(cfg, "sparse_active", 0.1),
         )
     elif cfg.encoder_type == "cnn":
         enc = GridEncoderCNN(

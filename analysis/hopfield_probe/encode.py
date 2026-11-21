@@ -92,9 +92,18 @@ def encode_positions(
     *,
     device: str | torch.device = "cpu",
     chunk: int = 4096,
+    noise: float = 0.0,
+    rng: np.random.Generator | None = None,
 ) -> np.ndarray:
-    """Grid code -> encoder -> ``(N, out_dim)`` float32 unit vectors."""
+    """Grid code -> encoder -> ``(N, out_dim)`` float32 unit vectors.
+
+    ``noise`` > 0 adds independent Gaussian cell noise of that sd to every grid
+    code before encoding (a fresh draw per call, from ``rng``).
+    """
     codes = grid_codes(lambdas, xs, ys, fwhm_ratio)
+    if noise > 0:
+        rng = rng if rng is not None else np.random.default_rng()
+        codes = (codes + noise * rng.standard_normal(codes.shape)).astype(codes.dtype)
     parts = []
     with torch.no_grad():
         for start in range(0, codes.shape[0], chunk):
@@ -123,6 +132,14 @@ class Field:
     Npos: int
     device: str = "cpu"
     chunk: int = 4096
+    # test-time grid-cell noise (sd), a fresh draw for every code encoded; the
+    # local basis of the direction readout stays clean unless noise_basis
+    noise: float = 0.0
+    noise_basis: bool = False
+    noise_seed: int = 0
+
+    def __post_init__(self):
+        self._rng = np.random.default_rng(self.noise_seed)
 
     @property
     def embed_dim(self) -> int:
@@ -131,11 +148,12 @@ class Field:
                 1, int(sum(l * l for l in self.lambdas)), device=self.device)
             return int(self.encoder(probe).shape[-1])
 
-    def encode(self, gx: np.ndarray, gy: np.ndarray) -> np.ndarray:
+    def encode(self, gx: np.ndarray, gy: np.ndarray, *, noisy: bool = True) -> np.ndarray:
         """Encode *global* scaffold coordinates. No clipping -- callers clip."""
         return encode_positions(
             self.encoder, self.lambdas, self.fwhm_ratio, gx, gy,
             device=self.device, chunk=self.chunk,
+            noise=self.noise if noisy else 0.0, rng=self._rng,
         )
 
     def encoded_state(
@@ -166,9 +184,10 @@ class Field:
         gx = np.clip(positions[:, 0] + offset[0], 1, self.Npos - 2)
         gy = np.clip(positions[:, 1] + offset[1], 1, self.Npos - 2)
 
-        current = self.encode(gx, gy)
-        d_fwd = self.encode(gx, gy + 1) - current           # North, +y
-        d_rgt = self.encode(gx + 1, gy) - current           # East,  +x
+        nb = self.noise_basis
+        current = self.encode(gx, gy, noisy=nb)
+        d_fwd = self.encode(gx, gy + 1, noisy=nb) - current           # North, +y
+        d_rgt = self.encode(gx + 1, gy, noisy=nb) - current           # East,  +x
 
         if not swap_gram_schmidt:
             return gram_schmidt_2d_batch(d_fwd, d_rgt)

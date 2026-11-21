@@ -85,6 +85,11 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--n_cont_samples", type=int, default=None)
     g.add_argument("--n_cont_annulus", type=int, default=None)
     g.add_argument("--seed", type=int, default=0)
+    g.add_argument("--grid_noise", type=float, default=0.0,
+                   help="test-time grid-cell noise sd: a fresh draw on every grid code "
+                        "encoded (stored goals and cues); 0 = clean (default)")
+    g.add_argument("--grid_noise_basis", action="store_true",
+                   help="also add --grid_noise to the direction readout's local basis")
     g.add_argument("--device", default="cpu")
 
     d = p.add_argument_group("recall dynamics")
@@ -219,7 +224,11 @@ def main(argv: list[str] | None = None) -> int:
 
         field = Field(encoder=encoder, lambdas=list(mcfg.lambdas),
                       fwhm_ratio=fwhm, gain=gain, Npos=cfg.Npos,
-                      device=cfg.device, chunk=cfg.chunk)
+                      device=cfg.device, chunk=cfg.chunk,
+                      noise=args.grid_noise, noise_basis=args.grid_noise_basis,
+                      noise_seed=args.seed + 7)
+        header["grid_noise"] = float(args.grid_noise)
+        header["grid_noise_basis"] = bool(args.grid_noise_basis)
         prod = int(np.prod(mcfg.lambdas))
         if cfg.Npos > prod:
             raise SystemExit(

@@ -15,6 +15,9 @@ class EncoderModelConfig:
     nonlinearity: str = "gelu"
     output_nonlinearity: str = "tanh"
     gain: float = 5.0
+    # relu_sparse / relu_rank only (branch worktree-relu-sparse-encoder): fraction of output
+    # units active per input. Ported here so the probe can load those encoders.
+    sparse_active: float = 0.1
     # MLP-specific
     hidden_dim: int = 1024
     num_hidden_layers: int = 4

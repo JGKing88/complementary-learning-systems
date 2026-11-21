@@ -70,6 +70,122 @@ def _dig(ckpt: dict, key: str):
     return ckpt.get(key)
 
 
+# ``inhib:<spec>``: any encoder with uniform (global) inhibition. One constant c, the mean of
+# every unit's activity over 65,536 random scaffold cells, is subtracted from every unit of every
+# code, which is then rescaled to unit length. The same as ideal_encoder's center_global, for
+# trained encoders: stored goals, cues and readouts all see z - c. For a non-negative code it
+# removes the shared floor without touching the activity the encoder itself produces.
+INHIB_PREFIX = "inhib:"
+
+
+class InhibitedEncoder(torch.nn.Module):
+    def __init__(self, base: torch.nn.Module, c: float):
+        super().__init__()
+        self.base = base
+        self.c = float(c)
+
+    def forward(self, x, *args, **kwargs):
+        z = self.base(x, *args, **kwargs) - self.c
+        return z / z.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+
+def load_inhibited_encoder(spec: str, *, device="cpu", fwhm_override=None, fwhm_fallback=None):
+    """``load_probe_encoder``'s return shape for ``inhib:<spec>``."""
+    import numpy as np
+    from .encode import encode_positions
+    base, cfg, gain, fwhm, header = load_probe_encoder(
+        spec[len(INHIB_PREFIX):], device=device, fwhm_override=fwhm_override,
+        fwhm_fallback=fwhm_fallback)
+    lambdas = [int(l) for l in cfg.lambdas]
+    npos = int(np.prod(lambdas))
+    g = np.random.default_rng(12345)
+    xs, ys = g.integers(0, npos, 65536), g.integers(0, npos, 65536)
+    with torch.no_grad():
+        c = float(encode_positions(base, lambdas, fwhm, xs, ys, device=device).mean())
+    header = dict(header, path=spec, name=spec, inhibition_constant=c)
+    return InhibitedEncoder(base, c).eval(), cfg, gain, fwhm, header
+
+
+# ``rectify:<out|pre>:<checkpoint>``: a trained MLP encoder with a plain ReLU added after training,
+# then unit norm. ``out`` rectifies its actual output (for att0.5, tanh(100 u) normalised: nearly
+# +-1 per unit, so the result is nearly binary with about half the units on); ``pre`` rectifies the
+# graded values u = net(x) before the output nonlinearity. No sparsity target, no standardisation.
+RECTIFY_PREFIX = "rectify:"
+
+
+class RectifiedEncoder(torch.nn.Module):
+    def __init__(self, base, which):
+        super().__init__()
+        self.base, self.which = base, which
+
+    def forward(self, x, *args, **kwargs):
+        z = self.base(x, *args, **kwargs) if self.which == "out" else self.base.net(x)
+        z = torch.relu(z)
+        return z / z.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+
+def load_rectified_encoder(spec: str, *, device="cpu", fwhm_override=None, fwhm_fallback=None):
+    """``load_probe_encoder``'s return shape for ``rectify:<out|pre>:<checkpoint>``."""
+    which, _, ck = spec[len(RECTIFY_PREFIX):].partition(":")
+    if which not in ("out", "pre"):
+        raise ValueError(f"rectify: expects out or pre, got {which!r}")
+    base, cfg, gain, fwhm, header = load_probe_encoder(
+        ck, device=device, fwhm_override=fwhm_override, fwhm_fallback=fwhm_fallback)
+    header = dict(header, path=spec, name=spec, rectify=which)
+    return RectifiedEncoder(base, which).eval(), cfg, gain, fwhm, header
+
+
+# ``sparsify:<active>:<checkpoint>``: a trained MLP encoder made sparse and non-negative after
+# training, with no retraining. Its pre-output-nonlinearity values u = net(x) (graded, before the
+# tanh) are standardised per unit with means and sds over 65,536 random scaffold cells (so every
+# unit is used about equally, as the homeostatic rule does in training); at each input the top
+# `active` share of units then take the sparse profile relu(Phi^-1(1 - (k - 1/2) / D) - Phi^-1(1 -
+# active)) by rank, unit norm, as encoder_training's relu_rank output does.
+SPARSIFY_PREFIX = "sparsify:"
+
+
+class SparsifiedEncoder(torch.nn.Module):
+    def __init__(self, base, mu, sd, active):
+        super().__init__()
+        from statistics import NormalDist
+        self.base = base
+        self.register_buffer("mu", torch.as_tensor(mu, dtype=torch.float32))
+        self.register_buffer("sd", torch.as_tensor(sd, dtype=torch.float32))
+        D, nd = len(mu), NormalDist()
+        t = nd.inv_cdf(1.0 - active)
+        prof = torch.tensor([max(nd.inv_cdf(1.0 - (k + 0.5) / D) - t, 0.0) for k in range(D)])
+        self.register_buffer("profile", prof / prof.norm())
+
+    def forward(self, x, *args, **kwargs):
+        u = (self.base.net(x) - self.mu.to(x)) / self.sd.to(x)
+        order = u.argsort(dim=-1, descending=True)
+        return torch.zeros_like(u).scatter_(-1, order, self.profile.to(u).expand_as(u).contiguous())
+
+
+def load_sparsified_encoder(spec: str, *, device="cpu", fwhm_override=None, fwhm_fallback=None):
+    """``load_probe_encoder``'s return shape for ``sparsify:<active>:<checkpoint>``."""
+    import numpy as np
+    from .encode import grid_codes
+    active, _, ck = spec[len(SPARSIFY_PREFIX):].partition(":")
+    base, cfg, gain, fwhm, header = load_probe_encoder(
+        ck, device=device, fwhm_override=fwhm_override, fwhm_fallback=fwhm_fallback)
+    if not hasattr(base, "net"):
+        raise ValueError(f"sparsify needs an MLP encoder with .net, got {type(base).__name__}")
+    lambdas = [int(l) for l in cfg.lambdas]
+    npos = int(np.prod(lambdas))
+    g = np.random.default_rng(12345)
+    xs, ys = g.integers(0, npos, 65536), g.integers(0, npos, 65536)
+    us = []
+    with torch.no_grad():
+        for i in range(0, len(xs), 8192):
+            c = torch.from_numpy(grid_codes(lambdas, xs[i:i + 8192], ys[i:i + 8192], fwhm)).to(device)
+            us.append(base.net(c).double().cpu().numpy())
+    u = np.concatenate(us)
+    header = dict(header, path=spec, name=spec, sparsify_active=float(active))
+    return (SparsifiedEncoder(base, u.mean(0), u.std(0) + 1e-6, float(active)).to(device).eval(),
+            cfg, gain, fwhm, header)
+
+
 def load_probe_encoder(
     path: str,
     *,
@@ -94,6 +210,23 @@ def load_probe_encoder(
     [,seed=0][,gain=100]`` (``ideal_encoder.py``), so every script built on
     this loader scores the ideal code through the identical pipeline.
     """
+    if isinstance(path, str) and path.startswith(RECTIFY_PREFIX):
+        return load_rectified_encoder(path, device=device, fwhm_override=fwhm_override,
+                                      fwhm_fallback=fwhm_fallback)
+    if isinstance(path, str) and path.startswith(SPARSIFY_PREFIX):
+        return load_sparsified_encoder(path, device=device, fwhm_override=fwhm_override,
+                                       fwhm_fallback=fwhm_fallback)
+    if isinstance(path, str) and path.startswith(INHIB_PREFIX):
+        return load_inhibited_encoder(path, device=device, fwhm_override=fwhm_override,
+                                      fwhm_fallback=fwhm_fallback)
+    from .gwn_encoder import is_gwn_spec, load_gwn_encoder
+    if is_gwn_spec(path):
+        return load_gwn_encoder(path, device=device, fwhm_override=fwhm_override,
+                                fwhm_fallback=fwhm_fallback)
+    from .rp_encoder import is_rpnet_spec, load_rpnet_encoder
+    if is_rpnet_spec(path):
+        return load_rpnet_encoder(path, device=device, fwhm_override=fwhm_override,
+                                  fwhm_fallback=fwhm_fallback)
     from .ideal_net import is_idealnet_spec, load_idealnet_encoder
     if is_idealnet_spec(path):
         return load_idealnet_encoder(path, device=device,
@@ -490,7 +623,9 @@ def build_cell_bank(
 
     gx = np.concatenate(gx_parts)
     gy = np.concatenate(gy_parts)
-    return CellBank(Z=field.encode(gx, gy), k=k, size=size,
+    # the bank is the probe's ruler for decoding a recalled state to a cell, not
+    # part of the agent, so it stays clean under test-time grid noise
+    return CellBank(Z=field.encode(gx, gy, noisy=False), k=k, size=size,
                     n_alias=cfg.n_alias)
 
 
