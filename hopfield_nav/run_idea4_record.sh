@@ -37,6 +37,7 @@ module load cuda/13.0.1
 source activate cls
 unset CUDA_VISIBLE_DEVICES
 source scripts/cls_env.sh
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1      # P single-threaded lifetimes share the CPUs
 mkdir -p "$OUT"
 scaffold=$(python -u -m analysis.continual.prep_scaffold \
     --ckpt "$CKPT" --cache_root "$CLS_SCAFFOLD_CACHE" --static_vectorhash | tail -n 1)
