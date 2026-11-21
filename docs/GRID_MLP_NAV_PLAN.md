@@ -2289,6 +2289,10 @@ and i4_v32 (arms 1, 3, 4). Each arm is `hopfield_nav/run_idea4_agent_chain.sh`:
 | 4 | `_zf4`, width 2048 | frozen memory as start, trained by PPO | from scratch | 29957010 to 29957025 |
 | 5 | `_zf4`, I3_STAGE1 = idea 1 u3800 | frozen memory as start, trained by PPO | idea 1's, fine-tuned | 29962984 to 29963010 |
 | 5b | as 5, memory lr x 0.1 | as 5 | idea 1's, fine-tuned | 29968196 to 29968221 |
+| 4b | as 4, memory lr x 0.1 | as 4 | from scratch | 29979794 to 29979888 |
+
+Arm 4 was cancelled at about u420 (its resume/latest.pt is kept) and
+replaced by 4b, after the persistence test below showed its memory gone.
 
 Arm 5 was added after arm 1's first 250 updates. Arm 1 held known_reached
 at 0.55 to 0.69 over six evaluations while its steps to a known goal fell
@@ -2320,6 +2324,33 @@ update: approx_kl 0.000 and clip_frac 0 over all 80 steps, so PPO's replay
 of the memory from a zero state matches the rollout. The early stops come
 from how far a small change in the memory's weights moves a policy that
 follows d.
+
+Does PPO keep the memory? Each trainable arm's memory, pulled from its
+checkpoint, alone on the continual schedule under agent-like motion
+(`persist.py --motion continuous`, 6 arenas x 40 iterations, 64
+lifetimes): goals held in the last block (sum of far-read accuracy over the
+6 arenas), and c in the search before an arrival.
+
+| memory | goals held | c before arrival |
+|---|---|---|
+| start of arms 4, 5, 5b (`i4_motion_scratch_u30k`) | 3.20 | 0.87 |
+| arm 5b u200 (memory lr x 0.1) | 3.31 | 0.94 |
+| arm 5 u300 (memory lr x 1) | 0.45 | 0.79 |
+| arm 4 u400 (memory lr x 1) | 0.21 | 0.75 |
+| arm 3 u400 (random start) | 0.10 | 0.27 |
+
+At the controller's lr PPO erased the supervised memory's goal code within
+300 to 400 updates; at a tenth it is intact at u200. Arm 3's memory has not
+learned a goal-position code. Arm 5 still reached known goals about as
+often as arm 1 (0.6) with that memory erased, so known_reached against
+unknown_found is not a clean memory measure: a known goal is one the agent
+already found, an easier one on average. The steps are the measure, and
+every arm takes 50 to 95 steps to a known goal against idea 1's 12.85.
+
+To see each memory along the agent's own path, `agent_step` now steps a
+frozen copy of a trainable agent's memory as a shadow when agenthash is
+given `--recurrent_memory` (commit 838ed83, snapshot i4_v36): same inputs,
+same states, and the frozen memory's decode diagnostics.
 
 Smoke tests passed for every path. Arms 3 and 4 run at about twice the time
 per update of the frozen arms (backpropagation through the memory), so they
