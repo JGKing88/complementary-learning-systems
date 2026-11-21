@@ -92,6 +92,7 @@ def main() -> None:
     ax[2].set_xticks([1024, 4096, 16384])
     ax[2].set_xticklabels(["1k", "4k", "16k"])
     ax[2].set_yticks([2, 5, 10, 20, 40])
+    ax[2].set_ylim(0.35, 50)
     ax[2].set_yticklabels(["2", "5", "10", "20", "40"])
     ax[2].yaxis.set_minor_formatter(NullFormatter())
     ax[2].set_xlabel("units")
