@@ -276,7 +276,8 @@ class RolloutCollector:
         _last_vis = torch.zeros(B, visited_mod.N_DIR, device=self.device)
 
         # Buffers
-        all_obs = torch.zeros(B, T, agent.rnn.input_size, device=self.device)
+        all_obs = torch.zeros(B, T, getattr(agent, "obs_dim", agent.rnn.input_size),
+                              device=self.device)
         if cfg.agent.movement_mode == "discrete":
             all_move_actions = torch.zeros(B, T, dtype=torch.long, device=self.device)
         else:

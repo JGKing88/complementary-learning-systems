@@ -17,12 +17,12 @@ SCHEDULE=${SCHEDULE:-'lifetime:1000,envs=2,iters=2 ; lifetime:1000,envs=3,iters=
 RUN=navigate_i4_${ARM}_s${SEED}
 SAVE=/orcd/pool/003/jackking/cls_runs/agent_ckpts/$RUN
 SB=(--parsable --partition=pi_fiete,ou_bcs_normal --time=05:00:00 --exclude=node1802)
-prev=$(REPO=$REPO USE_WANDB=0 VARIANT=$VARIANT SEED=$SEED SAVE_DIR=$SAVE \
+prev=$(WANDB_MODE=disabled REPO=$REPO USE_WANDB=0 VARIANT=$VARIANT SEED=$SEED SAVE_DIR=$SAVE \
        I4_MEMORY=${I4_MEMORY:-} I4_RL_HIDDEN=${I4_RL_HIDDEN:-} I3_STAGE1=${LOAD:-} \
        I3_LIFE_SCHEDULE="$SCHEDULE" sbatch "${SB[@]}" hopfield_nav/run_nav_p2.sh)
 echo "$ARM link 1: job $prev  ($RUN)"
 for k in $(seq 2 "$LINKS"); do
-  prev=$(REPO=$REPO RUN=$RUN SCHEDULE="$SCHEDULE" \
+  prev=$(WANDB_MODE=disabled REPO=$REPO RUN=$RUN SCHEDULE="$SCHEDULE" \
          sbatch "${SB[@]}" --dependency=afterany:$prev hopfield_nav/run_nav_tri_continue.sh)
   echo "$ARM link $k: job $prev"
 done

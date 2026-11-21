@@ -49,6 +49,9 @@ class MemoryNavAgent(NavAgent):
     def __init__(self, cfg, input_dim: int, action_bounds=None, *, specs,
                  lambdas, grid_tables, grid_mlp):
         super().__init__(cfg, input_dim - MEMORY_INPUT_WIDTH, action_bounds)
+        # The observation is wider than the policy core's input (the memory
+        # channel is consumed here); buffers that store observations size by this.
+        self.obs_dim = int(input_dim)
         if int(getattr(cfg, "num_rnn_layers", 1)) != 1:
             raise ValueError("MemoryNavAgent keeps the memory state beside a "
                              "1-layer policy state")
