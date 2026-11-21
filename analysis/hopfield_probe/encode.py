@@ -140,6 +140,10 @@ class Field:
     # direction readout: the local basis is the centred difference of the code over
     # +- basis_step cells when basis_step > 1; 1 is production's one-cell forward difference
     basis_step: int = 1
+    # centred difference at basis_step = 1 too. The forward difference gives the current code a
+    # projection of -|basis vector| / 2 on each axis, a bias in project_q(recalled - current)
+    # that grows with the code's speed; the centred difference has none.
+    basis_centered: bool = False
 
     def __post_init__(self):
         self._rng = np.random.default_rng(self.noise_seed)
@@ -189,7 +193,7 @@ class Field:
 
         nb = self.noise_basis
         s = int(self.basis_step)
-        if s > 1:
+        if s > 1 or self.basis_centered:
             d_fwd = self.encode(gx, gy + s, noisy=nb) - self.encode(gx, gy - s, noisy=nb)
             d_rgt = self.encode(gx + s, gy, noisy=nb) - self.encode(gx - s, gy, noisy=nb)
         else:

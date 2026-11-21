@@ -1,0 +1,16 @@
+ideal:r=23.2,BASE,active=0.1|base c1 D1024|--basis_centered
+ideal:r=23.2,BASE,active=0.1,fast=0.05,r_fast=2|gauss 0.05 c1 D1024|--basis_centered
+ideal:r=23.2,B2048,active=0.1,fast=0.05,r_fast=2|gauss 0.05 c1 D4096|--basis_centered
+ideal:r=23.2,BASE,active=0.1,fast=0.1,r_fast=2|gauss 0.1 c1 D1024|--basis_centered
+ideal:r=23.2,B2048,active=0.1,fast=0.1,r_fast=2|gauss 0.1 c1 D4096|--basis_centered
+ideal:r=23.2,BASE,active=0.1,fast=0.3,r_fast=3|rf3 0.3 c1 D1024|--basis_centered
+ideal:r=23.2,B2048,active=0.1,fast=0.3,r_fast=3|rf3 0.3 c1 D4096|--basis_centered
+ideal:r=23.2,BASE,active=0.1,fast=0.3,r_fast=3|rf3 0.3 c2 D1024|--basis_step 2
+ideal:r=23.2,B2048,active=0.1,fast=0.3,r_fast=3|rf3 0.3 c2 D4096|--basis_step 2
+ideal:r=23.2,BASE,active=0.1,fast=0.5,r_fast=3|rf3 0.5 c1 D1024|--basis_centered
+ideal:r=23.2,B2048,active=0.1,fast=0.5,r_fast=3|rf3 0.5 c1 D4096|--basis_centered
+ideal:r=23.2,B2048,active=0.1,fast=0.5,r_fast=3|rf3 0.5 c2 D4096|--basis_step 2
+ideal:r=23.2,BASE,active=0.1,grid_fast=0.1|grid 0.1 c1 D1024|--basis_centered
+ideal:r=23.2,B2048,active=0.1,grid_fast=0.1|grid 0.1 c1 D4096|--basis_centered
+ideal:r=4.2,BASE,active=0.1|single r4.2 c1 D1024|--basis_centered
+ideal:r=4.2,B2048,active=0.1|single r4.2 c1 D4096|--basis_centered

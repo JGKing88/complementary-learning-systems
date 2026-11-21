@@ -93,6 +93,8 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--basis_step", type=int, default=1,
                    help="direction readout: centred difference of the code over +- this many "
                         "cells (1 = production's one-cell forward difference)")
+    g.add_argument("--basis_centered", action="store_true",
+                   help="direction readout: centred difference even at --basis_step 1")
     g.add_argument("--device", default="cpu")
 
     d = p.add_argument_group("recall dynamics")
@@ -229,8 +231,10 @@ def main(argv: list[str] | None = None) -> int:
                       fwhm_ratio=fwhm, gain=gain, Npos=cfg.Npos,
                       device=cfg.device, chunk=cfg.chunk,
                       noise=args.grid_noise, noise_basis=args.grid_noise_basis,
-                      noise_seed=args.seed + 7, basis_step=args.basis_step)
+                      noise_seed=args.seed + 7, basis_step=args.basis_step,
+                      basis_centered=args.basis_centered)
         header["basis_step"] = int(args.basis_step)
+        header["basis_centered"] = bool(args.basis_centered)
         header["grid_noise"] = float(args.grid_noise)
         header["grid_noise_basis"] = bool(args.grid_noise_basis)
         prod = int(np.prod(mcfg.lambdas))
