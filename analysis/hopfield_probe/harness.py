@@ -232,6 +232,10 @@ def load_probe_encoder(
         return load_idealnet_encoder(path, device=device,
                                      fwhm_override=fwhm_override,
                                      fwhm_fallback=fwhm_fallback)
+    from .bump_encoder import is_bump_spec, load_bump_encoder
+    if is_bump_spec(path):
+        return load_bump_encoder(path, device=device, fwhm_override=fwhm_override,
+                                 fwhm_fallback=fwhm_fallback)
     from .ideal_encoder import is_ideal_spec, load_ideal_encoder
     if is_ideal_spec(path):
         return load_ideal_encoder(path, device=device,
