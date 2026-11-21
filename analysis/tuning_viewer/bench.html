@@ -1,0 +1,1001 @@
+<title>Tuning Viewer Speed Test</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one instrument column. Run bar, browser facts, two result tables, log. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --fg: #141a22;
+  --muted: #586273;
+  --line: #d8dde5;
+  --accent: #1d5bbf;
+  --accent-fg: #ffffff;
+  --fast: #136038; --fast-bg: #dcf0e4;
+  --ok: #2c4a6b;   --ok-bg: #e3ebf5;
+  --slow: #7d5200; --slow-bg: #f9edd2;
+  --bad: #9f2219;  --bad-bg: #f9e0dc;
+  --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1318; --surface: #171c23; --fg: #e5e9ef; --muted: #9aa4b3; --line: #2b323c;
+    --accent: #79a6ff; --accent-fg: #0b1220;
+    --fast: #86d9a9; --fast-bg: #123020; --ok: #b0c8e8; --ok-bg: #1b2737;
+    --slow: #f0c66e; --slow-bg: #33280f; --bad: #ff9d92; --bad-bg: #3b1b17;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1318; --surface: #171c23; --fg: #e5e9ef; --muted: #9aa4b3; --line: #2b323c;
+  --accent: #79a6ff; --accent-fg: #0b1220;
+  --fast: #86d9a9; --fast-bg: #123020; --ok: #b0c8e8; --ok-bg: #1b2737;
+  --slow: #f0c66e; --slow-bg: #33280f; --bad: #ff9d92; --bad-bg: #3b1b17;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.5; }
+.wrap {
+  max-width: 980px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+  display: grid; gap: 28px;
+}
+h1 { font-size: 1.6rem; font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font-size: 1.05rem; font-weight: 600; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 68ch; }
+header { display: grid; gap: 8px; }
+.lede { color: var(--muted); }
+.mono, code { font-family: var(--mono); font-size: 0.86em; }
+section { display: grid; gap: 12px; min-width: 0; }
+.runbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+button {
+  font: inherit; font-weight: 500; border-radius: 6px; cursor: pointer;
+  padding: 8px 16px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg);
+}
+button.secondary { background: transparent; color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#status { color: var(--muted); min-width: 0; }
+.verdict { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; display: grid; gap: 8px; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px 24px; margin: 0; }
+.facts div { min-width: 0; display: grid; gap: 2px; }
+.facts dt { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.tablebox { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 9px 12px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: top; }
+th:first-child, td:first-child { text-align: left; }
+tbody tr:last-child td { border-bottom: 0; }
+thead th { font-weight: 500; font-size: 0.8rem; color: var(--muted); }
+thead th .sub { display: block; font-family: var(--mono); font-size: 0.72rem; font-weight: 400; }
+td .t { font-family: var(--mono); font-weight: 500; padding: 1px 6px; border-radius: 4px; }
+td .g { display: block; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+td.err { white-space: normal; text-align: left; color: var(--bad); font-size: 0.85rem; }
+.fast { color: var(--fast); background: var(--fast-bg); }
+.ok { color: var(--ok); background: var(--ok-bg); }
+.slow { color: var(--slow); background: var(--slow-bg); }
+.bad { color: var(--bad); background: var(--bad-bg); }
+.pending { color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 0.82rem; color: var(--muted); }
+.legend span.t { font-family: var(--mono); padding: 1px 6px; border-radius: 4px; }
+.caption { font-size: 0.85rem; color: var(--muted); }
+pre#log { margin: 0; font-family: var(--mono); font-size: 0.78rem; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; max-height: 260px; white-space: pre-wrap; color: var(--muted); }
+textarea { width: 100%; min-height: 160px; font-family: var(--mono); font-size: 0.75rem; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; box-sizing: border-box; }
+footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; font-size: 0.88rem; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<main class="wrap">
+  <header>
+    <h1>Tuning viewer speed test</h1>
+    <p class="lede">Times the trained encoder from the cosyne figures (att0.5: 434 inputs, four 256-unit GELU layers, 1024 outputs) on each compute engine this browser offers, and checks every engine's output against maps the repo's Python code computed for the same cells.</p>
+  </header>
+
+  <div class="runbar">
+    <button id="run" type="button" disabled>Run speed test</button>
+    <span id="status" role="status">Loading the encoder weights…</span>
+  </div>
+
+  <section class="verdict" id="verdict" hidden></section>
+
+  <section aria-labelledby="h-env">
+    <h2 id="h-env">This browser</h2>
+    <dl class="facts" id="env"><div><dt>Status</dt><dd>Checking what this browser offers…</dd></div></dl>
+  </section>
+
+  <section aria-labelledby="h-compute">
+    <h2 id="h-compute">All 1024 units over an arena</h2>
+    <div class="tablebox"><table id="t-compute"></table></div>
+    <p class="caption">Median milliseconds to compute every unit at every cell of an S × S arena, with GPU throughput below. A cell costs 0.92 MFLOP once the first layer is folded into per-module tables. "Start-up" covers starting the engine, compiling its shaders and computing the first 20-cell arena, which the viewer pays once when it opens. "Matches Python" is the largest difference from the reference maps over two arenas, one of which wraps around both scaffold edges; unit values are about ±0.031.</p>
+    <div class="legend">
+      <span><span class="t fast">fast</span> fits in one 60 Hz frame (16.7 ms)</span>
+      <span><span class="t ok">ok</span> under 100 ms</span>
+      <span><span class="t slow">slow</span> under 1 s</span>
+      <span><span class="t bad">very slow</span> over 1 s</span>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-readback">
+    <h2 id="h-readback">One page of units, copied back for drawing</h2>
+    <div class="tablebox"><table id="t-readback"></table></div>
+    <p class="caption">Median milliseconds to compute the arena and copy 64 units' maps from the GPU back to the page, which is what drawing a page of 64 thumbnails needs.</p>
+  </section>
+
+  <section aria-labelledby="h-full">
+    <h2 id="h-full">Whole scaffold</h2>
+    <div class="runbar">
+      <button id="run-full" class="secondary" type="button" disabled>Time the whole 1716 × 1716 scaffold</button>
+      <span id="full-out" class="caption">Uses the fastest engine from the main run. 2.9 million cells, 2.7 TFLOP.</span>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-log">
+    <h2 id="h-log">Log</h2>
+    <pre id="log">Nothing logged yet.</pre>
+  </section>
+
+  <footer>
+    <span id="save-status">Connecting to the result store…</span>
+    <button id="copy" class="secondary" type="button">Copy results</button>
+    <textarea id="copytext" hidden readonly aria-label="Results as JSON"></textarea>
+  </footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu@4.22.0/dist/tf-backend-webgpu.min.js"></script>
+<script>
+"use strict";
+
+// ---------------------------------------------------------------- settings
+const SIZES = [20, 60, 120, 200, 500];
+const READBACK_SIZES = [20, 60, 200];
+const READBACK_UNITS = 64;
+const CHUNK = 16384;               // cells per GPU batch
+const BENCH_X0 = 400, BENCH_Y0 = 900;
+const SLOW_STOP_MS = 4000;         // stop an engine's larger sizes past this
+const PAGE_VERSION = "bench v1";
+
+const state = {
+  manifest: null, P: null, refs: [], env: null, results: null,
+  db: null, runId: null, saving: Promise.resolve(), running: false, best: null,
+};
+
+// ---------------------------------------------------------------- utilities
+const logLines = [];
+function log(msg) {
+  logLines.push(new Date().toISOString().slice(11, 19) + "  " + msg);
+  document.getElementById("log").textContent = logLines.join("\n");
+}
+function errText(e) { return e && e.message ? e.message : String(e); }
+window.addEventListener("error", e => log("page error: " + (e.message || String(e))));
+window.addEventListener("unhandledrejection", e => log("unhandled rejection: " + errText(e.reason)));
+const yieldUI = () => new Promise(r => setTimeout(r, 0));
+const setStatus = s => { document.getElementById("status").textContent = s; };
+const setSaveStatus = s => { document.getElementById("save-status").textContent = s; };
+
+function fmtMs(ms) {
+  if (!isFinite(ms)) return "–";
+  if (ms >= 1000) return (ms / 1000).toFixed(2) + " s";
+  if (ms >= 100) return Math.round(ms) + " ms";
+  if (ms >= 1) return ms.toFixed(1) + " ms";
+  return ms.toFixed(2) + " ms";
+}
+function speedClass(ms) { return ms <= 16.7 ? "fast" : ms <= 100 ? "ok" : ms <= 1000 ? "slow" : "bad"; }
+const MACS_PER_CELL = 3 * 256 * 256 + 256 * 1024;
+const gflopOf = S => 2 * MACS_PER_CELL * S * S / 1e9;
+const gflops = (S, ms) => gflopOf(S) / (ms / 1000);
+
+async function fetchOk(url, kind) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(url + ": HTTP " + res.status);
+  return kind === "json" ? res.json() : res.text();
+}
+
+// The arrays travel as base64 of their float32 little-endian bytes.
+function b64ToF32(text) {
+  const bin = atob(text.trim());
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  if (u8.length % 4) throw new Error("base64 payload is not a whole number of float32 values");
+  return new Float32Array(u8.buffer);
+}
+
+async function loadData() {
+  const m = await fetchOk("manifest.json", "json");
+  const all = b64ToF32(await fetchOk(m.weights_file, "text"));
+  const get = name => {
+    const a = m.arrays.find(a => a.name === name);
+    if (!a) throw new Error("manifest has no array " + name);
+    const n = a.shape.reduce((x, y) => x * y, 1);
+    return all.subarray(a.offset, a.offset + n);
+  };
+  state.manifest = m;
+  state.P = {
+    T: get("T"), b1: get("b1"),
+    W: ["W2", "W3", "W4", "W5"].map(get), b: ["b2", "b3", "b4", "b5"].map(get),
+    gain: m.gain, lambdas: m.lambdas, rowOff: m.row_offsets,
+    hidden: m.hidden, out: m.out_dim, npos: m.npos,
+  };
+  if (state.P.hidden !== 256 || state.P.out !== 1024)
+    throw new Error("expected 256 hidden units and 1024 outputs, got " + state.P.hidden + " and " + state.P.out);
+  for (const r of m.refs)
+    state.refs.push(Object.assign({}, r, { data: b64ToF32(await fetchOk(r.file, "text")) }));
+}
+
+// Cell n = row*S + col sits at scaffold ((x0+col) mod Npos, (y0+row) mod Npos).
+// Module m's table row is rowOff[m] + (x mod l)*l + (y mod l).
+function cellIndices(x0, y0, S, start, n) {
+  const P = state.P, L = P.lambdas, O = P.rowOff;
+  const idx = [new Int32Array(n), new Int32Array(n), new Int32Array(n)];
+  for (let i = 0; i < n; i++) {
+    const c = start + i, row = Math.floor(c / S), col = c - row * S;
+    const x = (x0 + col) % P.npos, y = (y0 + row) % P.npos;
+    for (let m = 0; m < 3; m++) idx[m][i] = O[m] + (x % L[m]) * L[m] + (y % L[m]);
+  }
+  return idx;
+}
+
+function compare(out, ref) {
+  if (out.length !== ref.length) throw new Error("output has " + out.length + " values, reference " + ref.length);
+  let maxAbs = 0, nBad = 0, nNaN = 0;
+  for (let i = 0; i < ref.length; i++) {
+    const d = Math.abs(out[i] - ref[i]);
+    if (Number.isNaN(d)) { nNaN++; continue; }
+    if (d > maxAbs) maxAbs = d;
+    if (d > 1e-3) nBad++;
+  }
+  return { maxAbs, nBad, nNaN, n: ref.length };
+}
+
+async function timeIt(fn) {
+  let t = performance.now();
+  await fn();
+  const cold = performance.now() - t;
+  if (cold > SLOW_STOP_MS) return { median: cold, min: cold, cold, reps: 1, coldOnly: true };
+  const times = [], start = performance.now();
+  while (times.length < 15) {
+    t = performance.now();
+    await fn();
+    times.push(performance.now() - t);
+    if (times.length >= 3 && performance.now() - start > 1500) break;
+  }
+  times.sort((a, b) => a - b);
+  return { median: times[times.length >> 1], min: times[0], cold, reps: times.length };
+}
+
+// ---------------------------------------------------------------- WGSL
+function wgslCommon(P) {
+  return `
+struct Params { n: u32, start: u32, S: u32, x0: u32, y0: u32, p0: u32, p1: u32, p2: u32 };
+const NPOS: u32 = ${P.npos}u;
+const HID: u32 = ${P.hidden}u;
+const GAIN: f32 = ${Number(P.gain).toFixed(6)};
+fn erf4(x: vec4f) -> vec4f {
+  let a = abs(x);
+  let t = 1.0 / (1.0 + 0.3275911 * a);
+  let p = ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t;
+  return sign(x) * (1.0 - p * exp(-a * a));
+}
+fn gelu4(x: vec4f) -> vec4f { return 0.5 * x * (1.0 + erf4(x * 0.7071067811865476)); }
+fn gelu1(x: f32) -> f32 { return gelu4(vec4f(x)).x; }
+`;
+}
+
+function wgslLayer1(P) {
+  const L = P.lambdas, O = P.rowOff;
+  const row = m => `${O[m]}u + (x % ${L[m]}u) * ${L[m]}u + (y % ${L[m]}u)`;
+  return wgslCommon(P) + `
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read> T: array<f32>;
+@group(0) @binding(2) var<storage, read> b1: array<f32>;
+@group(0) @binding(3) var<storage, read_write> H: array<f32>;
+@compute @workgroup_size(${P.hidden})
+fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+  let i = wg.x;
+  if (i >= prm.n) { return; }
+  let c = prm.start + i;
+  let row = c / prm.S;
+  let col = c - row * prm.S;
+  let x = (prm.x0 + col) % NPOS;
+  let y = (prm.y0 + row) % NPOS;
+  let k = lid.x;
+  let r0 = ${row(0)};
+  let r1 = ${row(1)};
+  let r2 = ${row(2)};
+  let h = b1[k] + T[r0 * HID + k] + T[r1 * HID + k] + T[r2 * HID + k];
+  H[i * HID + k] = gelu1(h);
+}`;
+}
+
+// C = act(A B + bias), A: n x K, B: K x M (row-major), tiles of 64 x 64,
+// 16 x 16 threads, each computing 4 rows x one vec4 of columns.
+function wgslMatmul(P, K, M, act) {
+  let inner = "";
+  for (let kq = 0; kq < 4; kq++) {
+    inner += `    {\n`;
+    for (let i = 0; i < 4; i++) inner += `      let a${i} = As[(ty * 4u + ${i}u) * 4u + ${kq}u];\n`;
+    ["x", "y", "z", "w"].forEach((comp, kk) => {
+      inner += `      { let b = Bs[${kq * 4 + kk}u * 16u + tx];` +
+        ` acc0 += a0.${comp} * b; acc1 += a1.${comp} * b; acc2 += a2.${comp} * b; acc3 += a3.${comp} * b; }\n`;
+    });
+    inner += `    }\n`;
+  }
+  const actExpr = act === "gelu" ? "gelu4(v)" : "tanh(clamp(v * GAIN, vec4f(-15.0), vec4f(15.0)))";
+  return wgslCommon(P) + `
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read> A: array<vec4f>;
+@group(0) @binding(2) var<storage, read> B: array<vec4f>;
+@group(0) @binding(3) var<storage, read> bias: array<vec4f>;
+@group(0) @binding(4) var<storage, read_write> C: array<vec4f>;
+var<workgroup> As: array<vec4f, 256>;
+var<workgroup> Bs: array<vec4f, 256>;
+const KDIM: u32 = ${K}u;
+const K4: u32 = ${K / 4}u;
+const M4: u32 = ${M / 4}u;
+fn applyAct(v: vec4f) -> vec4f { return ${actExpr}; }
+@compute @workgroup_size(16, 16)
+fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+  let tx = lid.x;
+  let ty = lid.y;
+  let tid = ty * 16u + tx;
+  let row0 = wg.y * 64u;
+  let col40 = wg.x * 16u;
+  let aRow = row0 + tid / 4u;
+  let aCol = tid % 4u;
+  let bRow = tid / 16u;
+  let bCol = tid % 16u;
+  var acc0 = vec4f(0.0);
+  var acc1 = vec4f(0.0);
+  var acc2 = vec4f(0.0);
+  var acc3 = vec4f(0.0);
+  for (var k0 = 0u; k0 < KDIM; k0 = k0 + 16u) {
+    var av = vec4f(0.0);
+    if (aRow < prm.n) { av = A[aRow * K4 + k0 / 4u + aCol]; }
+    As[tid] = av;
+    Bs[tid] = B[(k0 + bRow) * M4 + col40 + bCol];
+    workgroupBarrier();
+${inner}    workgroupBarrier();
+  }
+  let bv = bias[col40 + tx];
+  let r = row0 + ty * 4u;
+  if (r < prm.n) { C[r * M4 + col40 + tx] = applyAct(acc0 + bv); }
+  if (r + 1u < prm.n) { C[(r + 1u) * M4 + col40 + tx] = applyAct(acc1 + bv); }
+  if (r + 2u < prm.n) { C[(r + 2u) * M4 + col40 + tx] = applyAct(acc2 + bv); }
+  if (r + 3u < prm.n) { C[(r + 3u) * M4 + col40 + tx] = applyAct(acc3 + bv); }
+}`;
+}
+
+function wgslNormalize(P) {
+  return wgslCommon(P) + `
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read_write> C: array<vec4f>;
+var<workgroup> red: array<f32, 256>;
+const R4: u32 = ${P.out / 4}u;
+@compute @workgroup_size(256)
+fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+  let r = wg.x;
+  if (r >= prm.n) { return; }
+  let v = C[r * R4 + lid.x];
+  red[lid.x] = dot(v, v);
+  workgroupBarrier();
+  for (var s = 128u; s > 0u; s = s >> 1u) {
+    if (lid.x < s) { red[lid.x] = red[lid.x] + red[lid.x + s]; }
+    workgroupBarrier();
+  }
+  let nrm = max(sqrt(red[0]), 1e-12);
+  C[r * R4 + lid.x] = v / nrm;
+}`;
+}
+
+function wgslExtract(P, U) {
+  return wgslCommon(P) + `
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read> C: array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> E: array<vec4f>;
+const R4: u32 = ${P.out / 4}u;
+const U4: u32 = ${U / 4}u;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) g: vec3u) {
+  let i = g.x;
+  if (i >= prm.n * U4) { return; }
+  let r = i / U4;
+  let c = i % U4;
+  E[i] = C[r * R4 + c];
+}`;
+}
+
+// ---------------------------------------------------------------- engine: hand-written WebGPU
+function makeRawEngine() {
+  const eng = { key: "raw-webgpu", name: "Hand-written WebGPU", sizes: SIZES, readbackSizes: READBACK_SIZES };
+  const setParams = (n, start, S, x0, y0) =>
+    eng.device.queue.writeBuffer(eng.buf.prm, 0, new Uint32Array([n, start, S, x0, y0, 0, 0, 0]));
+  const encodeChunk = (enc, n) => {
+    const pass = enc.beginComputePass();
+    for (const s of eng.passes) {
+      pass.setPipeline(s.p);
+      pass.setBindGroup(0, s.g);
+      const [x, y] = s.wg(n);
+      pass.dispatchWorkgroups(x, y);
+    }
+    pass.end();
+  };
+
+  eng.init = async () => {
+    const P = state.P;
+    eng.disposed = false;
+    if (!navigator.gpu) throw new Error("navigator.gpu is missing, so this browser or frame has no WebGPU");
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+    if (!adapter) throw new Error("navigator.gpu.requestAdapter() returned null");
+    const device = await adapter.requestDevice();
+    eng.device = device;
+    device.lost.then(info => { if (!eng.disposed) log("Hand-written WebGPU: device lost: " + info.message); });
+    device.addEventListener("uncapturederror", e => log("Hand-written WebGPU error: " + e.error.message));
+    const U = GPUBufferUsage;
+    const upload = arr => {
+      const b = device.createBuffer({ size: Math.ceil(arr.byteLength / 16) * 16, usage: U.STORAGE | U.COPY_DST });
+      device.queue.writeBuffer(b, 0, arr);
+      return b;
+    };
+    const maxRef = Math.max(...state.refs.map(r => r.S * r.S));
+    const buf = {
+      T: upload(P.T), b1: upload(P.b1), W: P.W.map(upload), b: P.b.map(upload),
+      prm: device.createBuffer({ size: 32, usage: U.UNIFORM | U.COPY_DST }),
+      hA: device.createBuffer({ size: CHUNK * P.hidden * 4, usage: U.STORAGE }),
+      hB: device.createBuffer({ size: CHUNK * P.hidden * 4, usage: U.STORAGE }),
+      out: device.createBuffer({ size: CHUNK * P.out * 4, usage: U.STORAGE | U.COPY_SRC }),
+      ext: device.createBuffer({ size: CHUNK * READBACK_UNITS * 4, usage: U.STORAGE | U.COPY_SRC }),
+    };
+    buf.map = device.createBuffer({
+      size: Math.max(CHUNK * READBACK_UNITS * 4, maxRef * P.out * 4),
+      usage: U.MAP_READ | U.COPY_DST,
+    });
+    eng.buf = buf;
+
+    device.pushErrorScope("validation");
+    const pipe = async (code, label) => {
+      const module = device.createShaderModule({ code, label });
+      const info = await module.getCompilationInfo();
+      const errs = info.messages.filter(m => m.type === "error");
+      if (errs.length)
+        throw new Error(label + " shader did not compile: " +
+          errs.map(m => "line " + m.lineNum + ": " + m.message).join("; "));
+      return device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint: "main" }, label });
+    };
+    const [pL1, pMM, pOut, pNorm, pExt] = await Promise.all([
+      pipe(wgslLayer1(P), "layer 1"),
+      pipe(wgslMatmul(P, 256, 256, "gelu"), "hidden matmul"),
+      pipe(wgslMatmul(P, 256, 1024, "tanh"), "output matmul"),
+      pipe(wgslNormalize(P), "normalize"),
+      pipe(wgslExtract(P, READBACK_UNITS), "extract"),
+    ]);
+    const bg = (p, list) => device.createBindGroup({
+      layout: p.getBindGroupLayout(0),
+      entries: list.map((b, i) => ({ binding: i, resource: { buffer: b } })),
+    });
+    const mmWg = M => n => [M / 64, Math.ceil(n / 64)];
+    eng.passes = [
+      { p: pL1, g: bg(pL1, [buf.prm, buf.T, buf.b1, buf.hA]), wg: n => [n, 1] },
+      { p: pMM, g: bg(pMM, [buf.prm, buf.hA, buf.W[0], buf.b[0], buf.hB]), wg: mmWg(P.hidden) },
+      { p: pMM, g: bg(pMM, [buf.prm, buf.hB, buf.W[1], buf.b[1], buf.hA]), wg: mmWg(P.hidden) },
+      { p: pMM, g: bg(pMM, [buf.prm, buf.hA, buf.W[2], buf.b[2], buf.hB]), wg: mmWg(P.hidden) },
+      { p: pOut, g: bg(pOut, [buf.prm, buf.hB, buf.W[3], buf.b[3], buf.out]), wg: mmWg(P.out) },
+      { p: pNorm, g: bg(pNorm, [buf.prm, buf.out]), wg: n => [n, 1] },
+    ];
+    eng.extract = {
+      p: pExt, g: bg(pExt, [buf.prm, buf.out, buf.ext]),
+      wg: n => [Math.ceil(n * READBACK_UNITS / 4 / 64), 1],
+    };
+    const err = await device.popErrorScope();
+    if (err) throw new Error("WebGPU validation: " + err.message);
+    const ai = adapter.info || {};
+    return { adapter: [ai.vendor, ai.architecture, ai.description].filter(Boolean).join(" ") || "unknown" };
+  };
+
+  eng.runArena = async (x0, y0, S) => {
+    const N = S * S, dev = eng.device;
+    for (let s = 0; s < N; s += CHUNK) {
+      const n = Math.min(CHUNK, N - s);
+      setParams(n, s, S, x0, y0);
+      const enc = dev.createCommandEncoder();
+      encodeChunk(enc, n);
+      dev.queue.submit([enc.finish()]);
+    }
+    await dev.queue.onSubmittedWorkDone();
+  };
+
+  eng.readUnits = async (x0, y0, S, units) => {
+    const N = S * S, dev = eng.device, out = new Float32Array(N * units);
+    for (let s = 0; s < N; s += CHUNK) {
+      const n = Math.min(CHUNK, N - s), bytes = n * units * 4;
+      setParams(n, s, S, x0, y0);
+      const enc = dev.createCommandEncoder();
+      encodeChunk(enc, n);
+      const pass = enc.beginComputePass();
+      pass.setPipeline(eng.extract.p);
+      pass.setBindGroup(0, eng.extract.g);
+      const [x, y] = eng.extract.wg(n);
+      pass.dispatchWorkgroups(x, y);
+      pass.end();
+      enc.copyBufferToBuffer(eng.buf.ext, 0, eng.buf.map, 0, bytes);
+      dev.queue.submit([enc.finish()]);
+      await eng.buf.map.mapAsync(GPUMapMode.READ, 0, bytes);
+      out.set(new Float32Array(eng.buf.map.getMappedRange(0, bytes)), s * units);
+      eng.buf.map.unmap();
+    }
+    return out;
+  };
+
+  eng.fullOutput = async (x0, y0, S) => {
+    const N = S * S, dev = eng.device, bytes = N * state.P.out * 4;
+    if (N > CHUNK) throw new Error("reference arena larger than one chunk");
+    setParams(N, 0, S, x0, y0);
+    const enc = dev.createCommandEncoder();
+    encodeChunk(enc, N);
+    enc.copyBufferToBuffer(eng.buf.out, 0, eng.buf.map, 0, bytes);
+    dev.queue.submit([enc.finish()]);
+    await eng.buf.map.mapAsync(GPUMapMode.READ, 0, bytes);
+    const res = new Float32Array(eng.buf.map.getMappedRange(0, bytes).slice(0));
+    eng.buf.map.unmap();
+    return res;
+  };
+
+  eng.dispose = async () => {
+    eng.disposed = true;
+    if (!eng.device) return;
+    if (eng.buf) {
+      for (const v of Object.values(eng.buf)) (Array.isArray(v) ? v : [v]).forEach(b => b.destroy());
+    }
+    eng.device.destroy();
+    eng.device = null; eng.buf = null;
+  };
+  return eng;
+}
+
+// ---------------------------------------------------------------- engine: tf.js
+function tfErfPoly(x) {
+  const a = tf.abs(x);
+  const t = tf.div(1, tf.add(1, tf.mul(a, 0.3275911)));
+  let p = tf.add(tf.mul(t, 1.061405429), -1.453152027);
+  p = tf.add(tf.mul(p, t), 1.421413741);
+  p = tf.add(tf.mul(p, t), -0.284496736);
+  p = tf.add(tf.mul(p, t), 0.254829592);
+  p = tf.mul(p, t);
+  return tf.mul(tf.sign(x), tf.sub(1, tf.mul(p, tf.exp(tf.neg(tf.square(a))))));
+}
+function tfGelu(x, builtinErf) {
+  const u = tf.mul(x, Math.SQRT1_2);
+  const e = builtinErf ? tf.erf(u) : tfErfPoly(u);
+  return tf.mul(tf.mul(x, 0.5), tf.add(e, 1));
+}
+
+function makeTfEngine(backend, sizes, readbackSizes) {
+  const label = { webgpu: "tf.js on WebGPU", webgl: "tf.js on WebGL", cpu: "tf.js on CPU" }[backend];
+  const eng = { key: "tf-" + backend, name: label, sizes, readbackSizes };
+
+  eng.init = async () => {
+    if (!window.tf) throw new Error("tf.js did not load from the CDN");
+    let ok = false;
+    try { ok = await tf.setBackend(backend); } catch (e) { throw new Error("tf.setBackend failed: " + errText(e)); }
+    if (!ok) throw new Error('tf.setBackend("' + backend + '") returned false, so this backend is unavailable here');
+    await tf.ready();
+    const P = state.P;
+    eng.w = {
+      T: tf.tensor2d(P.T, [P.T.length / P.hidden, P.hidden]),
+      b1: tf.tensor1d(P.b1),
+      W: P.W.map((w, i) => tf.tensor2d(w, [P.hidden, i < 3 ? P.hidden : P.out])),
+      b: P.b.map(b => tf.tensor1d(b)),
+    };
+    eng.builtinErf = false;
+    try { eng.builtinErf = !!tf.getKernel("Erf", backend); } catch (e) { /* older API */ }
+    const info = { backend: tf.getBackend(), erf: eng.builtinErf ? "built-in" : "polynomial" };
+    if (backend === "webgl") info.float32 = tf.env().getBool("WEBGL_RENDER_FLOAT32_ENABLED");
+    return info;
+  };
+
+  eng.forwardChunk = (x0, y0, S, start, n) => {
+    const idx = cellIndices(x0, y0, S, start, n), w = eng.w, P = state.P;
+    return tf.tidy(() => {
+      let h = tf.gather(w.T, tf.tensor1d(idx[0], "int32"));
+      h = tf.add(h, tf.gather(w.T, tf.tensor1d(idx[1], "int32")));
+      h = tf.add(h, tf.gather(w.T, tf.tensor1d(idx[2], "int32")));
+      h = tfGelu(tf.add(h, w.b1), eng.builtinErf);
+      for (let l = 0; l < 3; l++) h = tfGelu(tf.add(tf.matMul(h, w.W[l]), w.b[l]), eng.builtinErf);
+      let z = tf.add(tf.matMul(h, w.W[3]), w.b[3]);
+      z = tf.tanh(tf.clipByValue(tf.mul(z, P.gain), -15, 15));
+      const nrm = tf.sqrt(tf.sum(tf.square(z), 1, true));
+      return tf.div(z, tf.maximum(nrm, 1e-12));
+    });
+  };
+
+  eng.runArena = async (x0, y0, S) => {
+    const N = S * S, sums = [];
+    for (let s = 0; s < N; s += CHUNK) {
+      const z = eng.forwardChunk(x0, y0, S, s, Math.min(CHUNK, N - s));
+      sums.push(tf.sum(z));
+      z.dispose();
+    }
+    await Promise.all(sums.map(t => t.data()));
+    sums.forEach(t => t.dispose());
+  };
+
+  eng.readUnits = async (x0, y0, S, units) => {
+    const N = S * S, out = new Float32Array(N * units);
+    for (let s = 0; s < N; s += CHUNK) {
+      const n = Math.min(CHUNK, N - s);
+      const z = eng.forwardChunk(x0, y0, S, s, n);
+      const sl = tf.slice(z, [0, 0], [n, units]);
+      z.dispose();
+      out.set(await sl.data(), s * units);
+      sl.dispose();
+    }
+    return out;
+  };
+
+  eng.fullOutput = async (x0, y0, S) => {
+    const z = eng.forwardChunk(x0, y0, S, 0, S * S);
+    const d = await z.data();
+    z.dispose();
+    return d;
+  };
+
+  eng.dispose = async () => {
+    if (!eng.w) return;
+    tf.dispose([eng.w.T, eng.w.b1, ...eng.w.W, ...eng.w.b]);
+    eng.w = null;
+  };
+  return eng;
+}
+
+const ENGINES = [
+  makeRawEngine(),
+  makeTfEngine("webgpu", SIZES, READBACK_SIZES),
+  makeTfEngine("webgl", SIZES, READBACK_SIZES),
+  makeTfEngine("cpu", [20], [20]),
+];
+
+// ---------------------------------------------------------------- environment
+async function probeEnv() {
+  const env = {
+    userAgent: navigator.userAgent,
+    cores: navigator.hardwareConcurrency || null,
+    memoryGB: navigator.deviceMemory || null,
+    crossOriginIsolated: !!window.crossOriginIsolated,
+  };
+  if (!navigator.gpu) env.webgpu = { error: "navigator.gpu is missing" };
+  else {
+    try {
+      const ad = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+      if (!ad) env.webgpu = { error: "no adapter" };
+      else {
+        let info = ad.info || null;
+        if (!info && ad.requestAdapterInfo) { try { info = await ad.requestAdapterInfo(); } catch (e) { info = null; } }
+        info = info || {};
+        env.webgpu = {
+          vendor: info.vendor || "", architecture: info.architecture || "",
+          description: info.description || "", device: info.device || "",
+          fallbackAdapter: !!(info.isFallbackAdapter || ad.isFallbackAdapter),
+          shaderF16: ad.features.has("shader-f16"),
+          maxStorageBinding: ad.limits.maxStorageBufferBindingSize,
+          maxBuffer: ad.limits.maxBufferSize,
+        };
+      }
+    } catch (e) { env.webgpu = { error: errText(e) }; }
+  }
+  try {
+    const gl = document.createElement("canvas").getContext("webgl2");
+    if (!gl) env.webgl2 = { error: "no WebGL2 context" };
+    else {
+      const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+      env.webgl2 = {
+        renderer: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+        floatRender: !!gl.getExtension("EXT_color_buffer_float"),
+      };
+    }
+  } catch (e) { env.webgl2 = { error: errText(e) }; }
+  try {
+    await WebAssembly.instantiate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+    env.wasm = { ok: true };
+  } catch (e) { env.wasm = { ok: false, error: errText(e) }; }
+  env.tfjs = window.tf ? ((tf.version && (tf.version.tfjs || tf.version["tfjs-core"])) || tf.version_core || "loaded") : null;
+  return env;
+}
+
+function renderEnv() {
+  const e = state.env, dl = document.getElementById("env");
+  const g = e.webgpu || {};
+  const rows = [
+    ["WebGPU", g.error ? "Unavailable: " + g.error
+      : [g.vendor, g.architecture, g.description].filter(Boolean).join(" ") || "available, adapter unnamed"],
+    ["WebGL2", e.webgl2.error ? "Unavailable: " + e.webgl2.error
+      : e.webgl2.renderer + (e.webgl2.floatRender ? ", renders float32" : ", no float32 render target")],
+    ["WebAssembly in this page", e.wasm.ok ? "Allowed" : "Blocked: " + e.wasm.error],
+    ["tf.js", e.tfjs ? "Version " + e.tfjs : "Did not load from the CDN"],
+    ["CPU threads", e.cores ? String(e.cores) : "not reported"],
+    ["Browser", e.userAgent],
+  ];
+  dl.replaceChildren(...rows.map(([k, v]) => {
+    const d = document.createElement("div"), dt = document.createElement("dt"), dd = document.createElement("dd");
+    dt.textContent = k; dd.textContent = v;
+    if (k === "Browser") dd.className = "mono";
+    d.append(dt, dd);
+    return d;
+  }));
+}
+
+// ---------------------------------------------------------------- tables
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function headCell(main, sub) {
+  const th = el("th", null, main);
+  if (sub) th.append(el("span", "sub", sub));
+  return th;
+}
+function buildTables() {
+  const tc = document.getElementById("t-compute");
+  const hr = el("tr");
+  hr.append(headCell("Engine"), headCell("Matches Python", "max |diff|"), headCell("Start-up", "compile + 1st arena"));
+  SIZES.forEach(S => hr.append(headCell(S + " × " + S, gflopOf(S).toFixed(S < 100 ? 2 : 0) + " GFLOP")));
+  const thead = el("thead"); thead.append(hr);
+  const tbody = el("tbody");
+  ENGINES.forEach(eng => { const tr = el("tr"); tr.id = "row-" + eng.key; tbody.append(tr); });
+  tc.replaceChildren(thead, tbody);
+
+  const tr2 = document.getElementById("t-readback");
+  const hr2 = el("tr");
+  hr2.append(headCell("Engine"));
+  READBACK_SIZES.forEach(S => hr2.append(headCell(S + " × " + S, (S * S * READBACK_UNITS * 4 / 1e6).toFixed(S < 100 ? 2 : 1) + " MB back")));
+  const thead2 = el("thead"); thead2.append(hr2);
+  const tbody2 = el("tbody");
+  ENGINES.forEach(eng => { const tr = el("tr"); tr.id = "rb-" + eng.key; tbody2.append(tr); });
+  tr2.replaceChildren(thead2, tbody2);
+
+  ENGINES.forEach(eng => { renderRow(eng, null); renderReadbackRow(eng, null); });
+}
+function timeCell(t, S, withRate) {
+  const td = el("td");
+  if (!t) { td.append(el("span", "pending", "–")); return td; }
+  td.append(el("span", "t " + speedClass(t.median), fmtMs(t.median)));
+  if (withRate) td.append(el("span", "g", Math.round(gflops(S, t.median)) + " GFLOP/s"));
+  return td;
+}
+function renderRow(eng, res) {
+  const tr = document.getElementById("row-" + eng.key);
+  const name = el("td");
+  name.append(el("span", null, eng.name));
+  if (res && res.init && (res.init.erf || res.init.float32 !== undefined)) {
+    const bits = [];
+    if (res.init.erf) bits.push("erf " + res.init.erf);
+    if (res.init.float32 === false) bits.push("float16 textures");
+    name.append(el("span", "g", bits.join(", ")));
+  }
+  const cells = [name];
+  if (res && res.error && !res.compute) {
+    const td = el("td", "err", res.error);
+    td.colSpan = 2 + SIZES.length;
+    cells.push(td);
+    tr.replaceChildren(...cells);
+    return;
+  }
+  const chk = el("td");
+  if (res && res.check && res.check.length) {
+    const worst = res.check.reduce((a, c) => c.maxAbs > a.maxAbs ? c : a);
+    const bad = res.check.reduce((a, c) => a + c.nBad + c.nNaN, 0);
+    chk.append(el("span", "t " + (bad ? "bad" : "fast"), bad ? bad + " values off" : worst.maxAbs.toExponential(1)));
+    if (bad) chk.append(el("span", "g", "max " + worst.maxAbs.toExponential(1)));
+  } else chk.append(el("span", "pending", "–"));
+  cells.push(chk);
+  const fc = el("td");
+  if (res && res.startupMs !== undefined) fc.append(el("span", "t " + speedClass(res.startupMs), fmtMs(res.startupMs)));
+  else fc.append(el("span", "pending", "–"));
+  cells.push(fc);
+  SIZES.forEach(S => {
+    if (!eng.sizes.includes(S)) { cells.push(el("td", "pending", "not run")); return; }
+    if (res && res.stoppedAt && S > res.stoppedAt) { cells.push(el("td", "pending", "skipped")); return; }
+    cells.push(timeCell(res && res.compute && res.compute[S], S, true));
+  });
+  if (res && res.error && res.compute) {
+    cells[cells.length - 1].append(el("span", "g", "stopped: " + res.error));
+  }
+  tr.replaceChildren(...cells);
+}
+function renderReadbackRow(eng, res) {
+  const tr = document.getElementById("rb-" + eng.key);
+  const cells = [el("td", null, eng.name)];
+  READBACK_SIZES.forEach(S => {
+    if (!eng.readbackSizes.includes(S)) { cells.push(el("td", "pending", "not run")); return; }
+    cells.push(timeCell(res && res.readback && res.readback[S], S, false));
+  });
+  tr.replaceChildren(...cells);
+}
+
+// ---------------------------------------------------------------- results store
+async function initDb() {
+  try {
+    state.db = (window.claude && window.claude.use) ? await window.claude.use("db") : null;
+  } catch (e) { state.db = null; }
+  setSaveStatus(state.db ? "Results are saved for Claude to read when the run finishes."
+                         : "No result store in this view. Use Copy results to share them.");
+}
+function save() {
+  if (!state.db || !state.results) return state.saving;
+  const body = JSON.parse(JSON.stringify(state.results));
+  state.saving = state.saving.then(async () => {
+    try {
+      await state.db.collection("runs").doc(state.runId).set(body);
+      setSaveStatus("Saved for Claude at " + new Date().toLocaleTimeString() + ".");
+    } catch (e) {
+      setSaveStatus("Could not save results (" + (e.code || "error") + "). Use Copy results instead.");
+      log("save failed: " + (e.code || "") + " " + errText(e));
+    }
+  });
+  return state.saving;
+}
+
+// ---------------------------------------------------------------- run
+async function runEngine(eng, res) {
+  setStatus(eng.name + ": starting");
+  await yieldUI();
+  const t0 = performance.now();
+  try { res.init = await eng.init(); }
+  catch (e) { res.error = "Could not start: " + errText(e); log(eng.name + ": " + res.error); return; }
+  renderRow(eng, res);
+  try {
+    res.check = [];
+    for (const r of state.refs) {
+      setStatus(eng.name + ": checking against the Python maps (" + r.label + ")");
+      await yieldUI();
+      const out = await eng.fullOutput(r.x0, r.y0, r.S);
+      // Start-up: engine init, shader compilation and the first full arena.
+      if (res.startupMs === undefined) res.startupMs = performance.now() - t0;
+      res.check.push(Object.assign({ ref: r.name }, compare(out, r.data)));
+    }
+    renderRow(eng, res);
+    res.compute = {};
+    for (const S of eng.sizes) {
+      setStatus(eng.name + ": " + S + " × " + S + " arena");
+      await yieldUI();
+      const t = await timeIt(() => eng.runArena(BENCH_X0, BENCH_Y0, S));
+      res.compute[S] = Object.assign({ gflops: gflops(S, t.median) }, t);
+      renderRow(eng, res);
+      if (t.median > SLOW_STOP_MS) { res.stoppedAt = S; break; }
+    }
+    res.readback = {};
+    for (const S of eng.readbackSizes) {
+      if (res.stoppedAt && S > res.stoppedAt) break;
+      setStatus(eng.name + ": " + S + " × " + S + " arena, copying 64 units back");
+      await yieldUI();
+      res.readback[S] = await timeIt(() => eng.readUnits(BENCH_X0, BENCH_Y0, S, READBACK_UNITS));
+      renderReadbackRow(eng, res);
+    }
+  } catch (e) {
+    res.error = errText(e);
+    log(eng.name + ": " + res.error);
+  }
+}
+
+function bestEngine() {
+  const R = state.results && state.results.engines;
+  if (!R) return null;
+  const at = (e, S) => (R[e.key] && R[e.key].compute && R[e.key].compute[S]) ? R[e.key].compute[S].median : Infinity;
+  const ran = ENGINES.filter(e => isFinite(at(e, 20)));
+  if (!ran.length) return null;
+  ran.sort((a, b) => (at(a, 200) - at(b, 200)) || (at(a, 60) - at(b, 60)) || (at(a, 20) - at(b, 20)));
+  return ran[0];
+}
+
+function renderVerdict() {
+  const box = document.getElementById("verdict"), R = state.results.engines;
+  const at = (key, S) => (R[key] && R[key].compute && R[key].compute[S]) ? R[key].compute[S].median : Infinity;
+  const best = bestEngine();
+  const lines = [];
+  if (!best) {
+    lines.push("No engine ran in this browser. The log below says why.");
+  } else {
+    let s = best.name + " is the fastest engine here. ";
+    const parts = [];
+    [60, 200, 500].forEach(S => { if (isFinite(at(best.key, S))) parts.push(S + " × " + S + " takes " + fmtMs(at(best.key, S))); });
+    s += "For all 1024 units, " + (parts.length ? parts.join(", ") : "a 20 × 20 arena takes " + fmtMs(at(best.key, 20))) + ".";
+    lines.push(s);
+    const raw = at("raw-webgpu", 200), tfg = at("tf-webgpu", 200), tfl = at("tf-webgl", 200);
+    if (isFinite(raw) && isFinite(tfg)) lines.push("At 200 × 200, tf.js on WebGPU takes " + (tfg / raw).toFixed(1) + "× as long as the hand-written shaders.");
+    if (isFinite(tfg) && isFinite(tfl)) lines.push("At 200 × 200, tf.js on WebGL takes " + (tfl / tfg).toFixed(1) + "× as long as tf.js on WebGPU.");
+    const checks = ENGINES.filter(e => R[e.key] && R[e.key].check && R[e.key].check.length);
+    const off = checks.filter(e => R[e.key].check.some(c => c.nBad || c.nNaN));
+    const worst = Math.max(0, ...checks.map(e => Math.max(...R[e.key].check.map(c => c.maxAbs))));
+    if (off.length) lines.push("Output differs from the Python maps for: " + off.map(e => e.name).join(", ") + ". Those timings measure the wrong computation.");
+    else if (checks.length) lines.push("Every engine that ran matches the Python maps to within " + worst.toExponential(1) + ", against unit values of about ±0.031.");
+  }
+  box.replaceChildren(el("h2", null, "Result"), ...lines.map(t => el("p", null, t)));
+  box.hidden = false;
+  state.results.verdict = { best: best ? best.key : null, text: lines };
+}
+
+const btnRun = document.getElementById("run");
+const btnFull = document.getElementById("run-full");
+
+btnRun.addEventListener("click", async () => {
+  if (state.running) return;
+  state.running = true;
+  btnRun.disabled = true; btnFull.disabled = true;
+  state.runId = "run-" + new Date().toISOString().replace(/[:.]/g, "-");
+  state.results = {
+    page: PAGE_VERSION, startedAt: new Date().toISOString(),
+    bench: { x0: BENCH_X0, y0: BENCH_Y0, chunk: CHUNK, sizes: SIZES, readbackSizes: READBACK_SIZES, readbackUnits: READBACK_UNITS },
+    encoder: state.manifest.encoder, env: state.env, engines: {}, log: logLines,
+  };
+  ENGINES.forEach(eng => { renderRow(eng, null); renderReadbackRow(eng, null); });
+  for (const eng of ENGINES) {
+    const res = state.results.engines[eng.key] = { name: eng.name };
+    await runEngine(eng, res);
+    try { await eng.dispose(); } catch (e) { log(eng.name + ": dispose failed: " + errText(e)); }
+    renderRow(eng, res);
+    renderReadbackRow(eng, res);
+    await save();
+  }
+  state.results.finishedAt = new Date().toISOString();
+  renderVerdict();
+  await save();
+  setStatus("Done. Run it again to check the numbers are stable.");
+  btnRun.textContent = "Run again";
+  btnRun.disabled = false;
+  state.best = bestEngine();
+  btnFull.disabled = !state.best || !state.best.sizes.includes(500);
+  state.running = false;
+});
+
+btnFull.addEventListener("click", async () => {
+  if (state.running || !state.best) return;
+  state.running = true;
+  btnRun.disabled = true; btnFull.disabled = true;
+  const eng = state.best, out = document.getElementById("full-out"), S = state.P.npos;
+  try {
+    out.textContent = "Starting " + eng.name + "…";
+    await eng.init();
+    await eng.runArena(BENCH_X0, BENCH_Y0, 20);
+    out.textContent = "Computing all 2.9 million cells with " + eng.name + "…";
+    await yieldUI();
+    const t0 = performance.now();
+    await eng.runArena(0, 0, S);
+    const ms = performance.now() - t0;
+    out.textContent = eng.name + ": " + fmtMs(ms) + " for the whole scaffold (" + Math.round(gflops(S, ms)) + " GFLOP/s).";
+    state.results.full = { engine: eng.key, ms, gflops: gflops(S, ms) };
+  } catch (e) {
+    out.textContent = "Failed: " + errText(e);
+    log(eng.name + ", whole scaffold: " + errText(e));
+    state.results.full = { engine: eng.key, error: errText(e) };
+  }
+  try { await eng.dispose(); } catch (e) { log("dispose failed: " + errText(e)); }
+  await save();
+  btnRun.disabled = false; btnFull.disabled = false;
+  state.running = false;
+});
+
+document.getElementById("copy").addEventListener("click", () => {
+  const text = JSON.stringify(state.results || { env: state.env, log: logLines }, null, 1);
+  const ta = document.getElementById("copytext");
+  const fallback = () => { ta.hidden = false; ta.value = text; ta.focus(); ta.select(); };
+  try {
+    navigator.clipboard.writeText(text).then(() => setSaveStatus("Results copied to the clipboard."), fallback);
+  } catch (e) { fallback(); }
+});
+
+// ---------------------------------------------------------------- start
+(async () => {
+  buildTables();
+  initDb();
+  try { await loadData(); }
+  catch (e) { setStatus("Could not load the encoder weights: " + errText(e)); log("load: " + errText(e)); return; }
+  try { state.env = await probeEnv(); renderEnv(); }
+  catch (e) { log("environment probe: " + errText(e)); state.env = { error: errText(e) }; }
+  btnRun.disabled = false;
+  setStatus("Ready. The test takes about a minute; keep this tab in front while it runs.");
+})();
+</script>
