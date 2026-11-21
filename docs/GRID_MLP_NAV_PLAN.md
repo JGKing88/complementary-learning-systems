@@ -2268,6 +2268,30 @@ Engineering.
 Order: the frozen path first (arms 1 and 2), then the trainable path (arms
 3 and 4).
 
+Launched (2026-11-21). Code: `memory/recurrent_goal.py` (RecurrentGoalBank,
+the frozen memory batched over a lifetime's rows), `policy/memory_agent.py`
+(MemoryNavAgent, the memory inside the policy), the collector and
+`rollout/lifetime.py` hooks, `train_navigate.py` flags
+`--recurrent_memory_checkpoint`, `--trainable_memory[_init|_hidden]`;
+commits b9348fc, e522cb4, 968b8c3, 96d9816, 61e0b91; snapshots i4_v31 (arm 2)
+and i4_v32 (arms 1, 3, 4). Each arm is `hopfield_nav/run_idea4_agent_chain.sh`:
+`task3r_k2_h128_gmlp` plus `_life` (idea 3's curriculum, 1000 updates each at
+2, 3, 4 and 6 arenas) plus `_rp`, 5-hour links resumed with
+`--continue_from`, W&B off, run directory
+`$CLS_RUNS/agent_ckpts/navigate_i4_<arm>_s42`. The frozen memory is
+`$CLS_RUNS/idea4/memories/i4_motion_scratch_u30k.pt`.
+
+| arm | lever | memory | controller | jobs |
+|---|---|---|---|---|
+| 1 | `_i4`, I3_STAGE1 = idea 1 u3800 | frozen | idea 1's, fine-tuned | 29956629 to 29956638 |
+| 2 | `_i4` | frozen | from scratch | 29956363 to 29956411 |
+| 3 | `_zr4`, width 1024 | random, trained by PPO | from scratch | 29956992 to 29957009 |
+| 4 | `_zf4`, width 2048 | frozen memory as start, trained by PPO | from scratch | 29957010 to 29957025 |
+
+Smoke tests passed for every path. Arms 3 and 4 run at about twice the time
+per update of the frozen arms (backpropagation through the memory), so they
+have 16 links against 8.
+
 ## 8. Decisions and open items
 
 | | |
