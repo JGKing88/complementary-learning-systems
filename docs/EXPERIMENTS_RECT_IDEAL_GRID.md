@@ -253,6 +253,34 @@ Sizes for both are in grid periods of 15.60 cells (the geometric mean), and in c
 `run_fields.sh`. One test field run (`m111523_rs`, 10% of 256 units) measured 565 fields per unit
 against 574 predicted.
 
+**Results (2026-11-21, all 2 x 95 runs).** Both came out as predicted. At 1024 units:
+
+| | 11, 12, 13, r = 16 | 11, 15, 23, r = 16 | 11, 15, 23, r = 20.85 |
+|---|---|---|---|
+| fields per unit, 10% / 20% | 194 / 251 | 947 / 1230 | 558 / 723 |
+| median field diameter, 10% (cells) | 34.1 | 34.2 | 44.5 |
+| median field diameter, 10% (grid periods) | 2.84 of 12 | 2.19 of 15.6 | 2.85 of 15.6 |
+| kernel half-width after inhibition, 10% | 19.0 | 19.0 | 24.7 |
+| direction error, 10% + inhibition, K = 5 | 4.8° | 4.1° | 3.8° |
+| exact retrieval, 10% + inhibition, K = 5 | 1.00 | 0.99 | 1.00 |
+| basin, 10% + inhibition, K = 5 (cells) | 28.7 | 31.0 | 29.5 |
+| basin, signed ideal, K = 5 (cells) | 32.1 | 31.6 | 39.6 |
+| direction error, signed ideal, K = 5 | 1.0° | 1.1° | 0.8° |
+
+* **r = 16 on the 11, 15, 23 scaffold changes only the scaffold's size.** Fields are the same size in
+  cells (34.2 against 34.1 at 10%) and 4.88 times as many per unit (947 / 194; the area ratio is 4.89),
+  as the Euler-characteristic formula says; every Hopfield measure is within the run-to-run spread of
+  the original (direction 4.1 against 4.8°, exact 0.99 against 1.00, basin 31.0 against 28.7). Only
+  the conversion to grid periods changes (2.19 periods of 15.6 cells).
+* **Scaling r with the periods keeps fields the same size in grid periods** (2.85 against 2.84) and
+  2.88 times as many per unit as the original (4.89 / 1.303^2 = 2.88; measured 558 / 194 = 2.88). The
+  wider kernel helps direction (3.8° against 4.8° at 10%, 1.6° against 2.2° at 20% of 4096 units) and
+  the signed ideal's basin (39.6 against 32.1 cells), because the 20 x 20 arenas are now smaller
+  relative to the kernel; exact retrieval is unchanged.
+
+Full tables: `python -m analysis.rect_ideal.summary $CLS_RESULTS/rect_ideal_grid_<variant>`; on the
+page, pick the modules in the rectified population's menu.
+
 ## Vector-HaSH place cells at the same sparsities (2026-11-20)
 
 `analysis/rect_ideal/hpc.py`, launched with `run_hpc.sh` (one task per module set). The place layer

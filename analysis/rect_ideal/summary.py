@@ -136,15 +136,15 @@ def print_tables(res: dict, K: str = "5") -> None:
     fidx = {(q["f"], q["D"]): q for q in res["fields"]}
     for title, get, p in (
             ("support fields per unit, mean", lambda q: q["support"]["fields_per_unit"]["mean"], 0),
-            ("support field diameter / 12, median",
+            ("support field diameter in grid periods, median",
              lambda q: q["support"]["diam_over_lambda"]["median"], 2),
-            ("support field diameter / 12, mean", lambda q: q["support"]["diam_over_lambda"]["mean"], 2),
-            ("support field diameter / 12, p95", lambda q: q["support"]["diam_over_lambda"]["p95"], 2),
+            ("support field diameter in grid periods, mean", lambda q: q["support"]["diam_over_lambda"]["mean"], 2),
+            ("support field diameter in grid periods, p95", lambda q: q["support"]["diam_over_lambda"]["p95"], 2),
             ("share of support fields under 9 cells", lambda q: q["support"]["share_fields_under9"], 2),
             ("largest field's share of a unit's active area",
              lambda q: q["support"]["largest_field_share"]["mean"], 2),
             ("20%-of-peak fields per unit, mean", lambda q: q["peak20"]["fields_per_unit"]["mean"], 0),
-            ("20%-of-peak diameter / 12, median", lambda q: q["peak20"]["diam_over_lambda"]["median"], 2),
+            ("20%-of-peak diameter in grid periods, median", lambda q: q["peak20"]["diam_over_lambda"]["median"], 2),
             ("kernel half-width after inhibition (cells)", lambda q: q["kernel"]["half_width_inh"], 1),
             ("signed ideal r=16 half-width at this D", lambda q: q["kernel"]["half_width_ideal_r16"], 1)):
         if not res["fields"]:
