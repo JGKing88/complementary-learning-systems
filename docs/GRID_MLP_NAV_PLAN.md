@@ -2287,6 +2287,19 @@ and i4_v32 (arms 1, 3, 4). Each arm is `hopfield_nav/run_idea4_agent_chain.sh`:
 | 2 | `_i4` | frozen | from scratch | 29956363 to 29956411 |
 | 3 | `_zr4`, width 1024 | random, trained by PPO | from scratch | 29956992 to 29957009 |
 | 4 | `_zf4`, width 2048 | frozen memory as start, trained by PPO | from scratch | 29957010 to 29957025 |
+| 5 | `_zf4`, I3_STAGE1 = idea 1 u3800 | frozen memory as start, trained by PPO | idea 1's, fine-tuned | 29962984 to 29963010 |
+
+Arm 5 was added after arm 1's first 250 updates. Arm 1 held known_reached
+at 0.55 to 0.69 over six evaluations while its steps to a known goal fell
+from 63 to 47. A short continual-protocol run on its u200 checkpoint showed
+why: on arenas whose goal was stored, the memory's d had a cosine of 0.08 to
+0.78 (mostly near 0.3) with the true goal direction. The controller can only
+use the read it is given, so arm 5 lets PPO adapt the memory to the agent's
+own movement (the brittleness of §7b.14). It forks idea 1's controller into
+MemoryNavAgent (`train_navigate.py` loads the parent's controller weights
+and keeps the constructor's memory, commit 28c477f, snapshot i4_v34).
+A 3-update smoke run moved both the memory and the controller weights by
+about 0.002.
 
 Smoke tests passed for every path. Arms 3 and 4 run at about twice the time
 per update of the frozen arms (backpropagation through the memory), so they
