@@ -160,8 +160,9 @@ def group_html(kind, grids, sources_href):
             + legend_html(k["ends"]) + f'<div class="hm-figs">{figs}</div></div>')
 
 
-def block_html(grids, sources):
-    """grids: parsed grids in page order; sources: {kind: id of the section that holds them}."""
+def block_html(grids, sources, counts_href=None):
+    """grids: parsed grids in page order; sources: {kind: id of the section that holds them};
+    counts_href: id of the fields-per-cell section, linked from the end of the block when present."""
     if not grids:
         return ""
     parts, kinds = [], []
@@ -170,5 +171,8 @@ def block_html(grids, sources):
         if mine:
             parts.append(group_html(kind, mine, sources[kind]))
             kinds.append(kind)
+    if counts_href:
+        parts.append('<p class="hm-sub">Field counts per grid period, with the spread across cells, are in the '
+                     f'section <a href="#{counts_href}">Fields per cell per grid period</a>.</p>')
     return (f'<section class="hm-block" aria-labelledby="{KINDS[kinds[0]]["title_id"]}">' + "".join(parts)
             + '<div class="hm-tip" role="tooltip" hidden></div></section>')

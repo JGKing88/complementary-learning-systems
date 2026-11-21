@@ -161,7 +161,8 @@ def render(md):
 def main():
     src, out = sys.argv[1], sys.argv[2]
     title, blocks, toc, grids, grid_sids = render(open(src, encoding="utf-8").read())
-    heat = heatmap.block_html(grids, grid_sids)
+    counts_sid = next((s for s, t in toc if t.startswith("Fields per cell per grid period")), None)
+    heat = heatmap.block_html(grids, grid_sids, counts_sid)
     # The report's first two paragraphs are the overall summary and the tag key.
     first_sec = next(k for k, b in enumerate(blocks) if b.startswith("</section>"))
     summary, legend_p = blocks[0], blocks[1]
