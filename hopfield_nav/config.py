@@ -337,6 +337,10 @@ class AgentConfig:
     trainable_memory: bool = False
     trainable_memory_init: str = ""
     trainable_memory_hidden: int = 1024
+    # The memory's Adam lr as a multiple of the PPO lr (its own param group).
+    # Adam moves every weight by about lr per step, and a controller that
+    # follows d (idea 1's, arm 5) turns that into a large policy change.
+    trainable_memory_lr_scale: float = 1.0
     # memory_backend "none" is idea 3 (GRID_MLP_NAV_PLAN §7): no memory
     # module, so the GRU's hidden state is the only place a goal can live, and
     # every path that would keep a memory across visits keeps the hidden

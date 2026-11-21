@@ -144,7 +144,18 @@ def run_navigate(
     set_phase_freeze(agent, freeze_move=False, freeze_store=cfg.freeze_store,
                      freeze_value=False, freeze_rnn=False)
     trainable = [p for p in agent.parameters() if p.requires_grad]
-    optimizer = torch.optim.Adam(trainable, lr=cfg.ppo.lr)
+    mem_scale = float(getattr(cfg.agent, "trainable_memory_lr_scale", 1.0))
+    if getattr(agent, "has_trainable_memory", False) and mem_scale != 1.0:
+        # The memory in its own group at lr x mem_scale; the lr schedule
+        # below multiplies each group's lr_scale in.
+        mem = {id(p) for p in agent.memory.parameters()}
+        optimizer = torch.optim.Adam(
+            [{"params": [p for p in trainable if id(p) not in mem], "lr_scale": 1.0},
+             {"params": [p for p in trainable if id(p) in mem], "lr_scale": mem_scale}],
+            lr=cfg.ppo.lr)
+        optimizer.param_groups[1]["lr"] = cfg.ppo.lr * mem_scale
+    else:
+        optimizer = torch.optim.Adam(trainable, lr=cfg.ppo.lr)
     # The explorer prior (training/prior.py, docs/EXPLORE_FIRST_PLAN.md §4):
     # anchored to the weights as they are RIGHT HERE, which is the parent
     # checkpoint's, before any step. A continued run would anchor to its own
@@ -500,7 +511,7 @@ def run_navigate(
         lr_now = knobs.lr * _warm * adaptive_lr_mult
         if lr_now != current_lr:
             for group in optimizer.param_groups:
-                group["lr"] = lr_now
+                group["lr"] = lr_now * group.get("lr_scale", 1.0)
             current_lr = lr_now
 
         # Regime slots: envs x repeats. `n_reps` > 1 collects each env that
@@ -1162,6 +1173,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "trainable_memory": ("agent.trainable_memory",),
     "trainable_memory_init": ("agent.trainable_memory_init",),
     "trainable_memory_hidden": ("agent.trainable_memory_hidden",),
+    "trainable_memory_lr_scale": ("agent.trainable_memory_lr_scale",),
     "input_grid_code": ("agent.input_grid_code",),
     "aux_goal_weight": ("agent.aux_goal_weight",),
     "aux_disp_weight": ("agent.aux_disp_weight",),
@@ -1419,6 +1431,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Idea 4 RL: start the memory from this memory.pt (arm 4); empty = random.")
     p.add_argument("--trainable_memory_hidden", type=int, default=1024,
                    help="Idea 4 RL: the memory LSTM's width.")
+    p.add_argument("--trainable_memory_lr_scale", type=float, default=1.0,
+                   help="Idea 4 RL: the memory's lr as a multiple of the PPO lr.")
     p.add_argument("--hopfield_storage_rule", choices=["hebb", "proj"], default="hebb",
                    help="Hopfield storage rule: hebb (default) or proj, the projection rule (stored patterns are exact fixed points, no cross-talk). hopfield/core.py.")
     p.add_argument("--movement_mode", default="continuous")
