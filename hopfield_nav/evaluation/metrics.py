@@ -161,6 +161,14 @@ def agent_step(
         hop_signal = torch.zeros(1, signal_dim, device=device)
         kv_conf = np.zeros(1, dtype=np.float32)
         store_embeddings = [None]
+        # A frozen copy of this agent's memory (agenthash --recurrent_memory on
+        # weights pulled from the checkpoint) steps on the same read as a
+        # shadow: identical inputs, so identical states, and its decode
+        # diagnostics (tag, block_stats) describe the agent's own memory.
+        if getattr(hopfield, "is_recurrent_goal_memory", False):
+            memory_backend.readout_for(cfg).signal(
+                [hopfield], env.obs_at(pos_tuple, _psi)[None, :], np.array([_psi]),
+                pos_arr, env_offset)
     elif memory_backend.is_kv(cfg):
         # Sensory-keyed recall + grid MLP, as in the rollout collector: d on
         # the hopfield_signal slot, c on memory_conf. The query is the view
