@@ -117,7 +117,7 @@ footer { font-size: 0.8rem; color: var(--muted); display: grid; gap: 4px; }
           <div class="head"><label for="s-s">Field width, spread</label><output id="o-s"></output></div>
           <input type="range" id="s-s" min="0" max="100" step="1">
         </div>
-        <svg class="plot" id="whist" viewBox="0 0 260 92" role="img" aria-label="Histogram of the field widths drawn, on a log width axis"></svg>
+        <svg class="plot" id="whist" viewBox="0 0 260 112" role="img" aria-label="Histogram of the field widths drawn, on a log width axis"></svg>
         <div class="ctl">
           <div class="head"><label for="s-n">Fields per cell, per 100 × 100 cells</label><output id="o-n"></output></div>
           <input type="range" id="s-n" min="0" max="1000" step="1">
@@ -150,7 +150,7 @@ footer { font-size: 0.8rem; color: var(--muted); display: grid; gap: 4px; }
         <div class="ptitle" id="t-k">Similarity kernel</div>
         <div class="kgrid">
           <figure>
-            <svg class="plot" id="k2d" viewBox="0 0 340 330" role="img" aria-label="Similarity as a function of the offset between two places"></svg>
+            <svg class="plot" id="k2d" viewBox="0 0 344 330" role="img" aria-label="Similarity as a function of the offset between two places"></svg>
             <figcaption>Similarity between each place and the place offset by (Δx, Δy), averaged over places. The dashed ring is the half-width.</figcaption>
           </figure>
           <figure>
@@ -450,7 +450,7 @@ function niceStep(x) { const p = Math.pow(10, Math.floor(Math.log10(x))), m = x 
 const kcanvas = document.createElement("canvas"); kcanvas.width = L; kcanvas.height = L;
 
 function drawK2d(res, hw) {
-  const svg = $("k2d"), x0 = 40, y0 = 8, S = 280, K = res.K, centred = st.P.centred;
+  const svg = $("k2d"), x0 = 50, y0 = 8, S = 280, K = res.K, centred = st.P.centred;
   let lo = Infinity;
   for (let p = 0; p < N; p++) lo = Math.min(lo, K[p]);
   const div = centred, range = div ? [-1, 1] : [Math.min(0, lo), 1];
@@ -496,7 +496,8 @@ function drawK1d(res, E) {
     const hw = halfWidth(meas, tailMean(meas));
     if (isFinite(hw)) {
       out.push(mk("line", { class: "mark", x1: x(hw), x2: x(hw), y1: mt, y2: mt + ph }));
-      out.push(mk("text", { x: x(hw) + 5, y: mt + 12 }, "half-width " + hw.toFixed(1)));
+      const right = x(hw) > ml + 0.7 * pw;
+      out.push(mk("text", { x: right ? x(hw) - 5 : x(hw) + 5, y: mt + 12, "text-anchor": right ? "end" : "start" }, "half-width " + hw.toFixed(1)));
     }
   }
   const hl = mk("line", { class: "hover", x1: 0, x2: 0, y1: mt, y2: mt + ph, visibility: "hidden" });
@@ -516,7 +517,7 @@ const tailMean = c => { let s = 0, n = 0; for (let d = 48; d < c.length; d++) { 
 // Field widths on a log axis, where a log-normal is a symmetric bump around its median and the
 // spread only widens it. The median (solid) and mean (dashed) are marked.
 function drawWidths(res) {
-  const svg = $("whist"), W = 260, Ht = 92, ml = 6, mr = 6, mt = 14, mb = 22;
+  const svg = $("whist"), W = 260, Ht = 112, ml = 8, mr = 8, mt = 18, mb = 38;
   if (!res || !res.widths.length) { svg.replaceChildren(mk("text", { x: W / 2, y: Ht / 2, "text-anchor": "middle" }, "no fields")); return; }
   const w = Array.from(res.widths).sort((a, b) => a - b), n = w.length;
   const lo = Math.log10(Math.max(0.5, w[Math.floor(0.002 * (n - 1))])), hi = Math.log10(w[Math.floor(0.998 * (n - 1))]);
@@ -525,17 +526,19 @@ function drawWidths(res) {
   const top = Math.max(...bins), pw = W - ml - mr, bw = pw / nb, x = lv => ml + (lv - a) / (b - a) * pw, out = [];
   bins.forEach((c, i) => { const h = c / top * (Ht - mt - mb); out.push(mk("rect", { class: "bar", x: ml + i * bw + 0.5, y: Ht - mb - h, width: Math.max(0.5, bw - 1), height: h, rx: 1 })); });
   out.push(mk("line", { class: "axis", x1: ml, x2: W - mr, y1: Ht - mb, y2: Ht - mb }));
+  let lastX = -Infinity;
   for (const t of [0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500]) {
-    const lt = Math.log10(t);
-    if (lt < a || lt > b) continue;
-    out.push(mk("line", { class: "axis", x1: x(lt), x2: x(lt), y1: Ht - mb, y2: Ht - mb + 3 }));
-    out.push(mk("text", { x: x(lt), y: Ht - mb + 13, "text-anchor": "middle" }, String(t)));
+    const lt = Math.log10(t), xt = x(lt);
+    if (lt < a || lt > b || xt - lastX < 26 || xt < ml + 6 || xt > W - mr - 6) continue;
+    lastX = xt;
+    out.push(mk("line", { class: "axis", x1: xt, x2: xt, y1: Ht - mb, y2: Ht - mb + 3 }));
+    out.push(mk("text", { x: xt, y: Ht - mb + 14, "text-anchor": "middle" }, String(t)));
   }
+  out.push(mk("text", { class: "ttl", x: ml + pw / 2, y: Ht - 5, "text-anchor": "middle" }, "Field width (cells, log scale)"));
   const med = w[Math.floor(0.5 * (n - 1))], mean = w.reduce((s2, v) => s2 + v, 0) / n;
-  out.push(mk("line", { class: "mark", x1: x(Math.log10(med)), x2: x(Math.log10(med)), y1: mt - 4, y2: Ht - mb, style: "stroke-dasharray: none" }));
-  out.push(mk("line", { class: "mark", x1: x(Math.log10(mean)), x2: x(Math.log10(mean)), y1: mt - 4, y2: Ht - mb }));
-  out.push(mk("text", { x: ml, y: 9 }, "median " + med.toFixed(1) + " · mean " + mean.toFixed(1) + " (dashed)"));
-  out.push(mk("text", { x: W - mr, y: 9, "text-anchor": "end" }, "cells, log scale"));
+  out.push(mk("line", { class: "mark", x1: x(Math.log10(med)), x2: x(Math.log10(med)), y1: mt, y2: Ht - mb, style: "stroke-dasharray: none" }));
+  out.push(mk("line", { class: "mark", x1: x(Math.log10(mean)), x2: x(Math.log10(mean)), y1: mt, y2: Ht - mb }));
+  out.push(mk("text", { x: ml, y: 11 }, "median " + med.toFixed(1) + " · mean " + mean.toFixed(1) + " (dashed)"));
   svg.replaceChildren(...out);
 }
 
