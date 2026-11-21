@@ -110,7 +110,7 @@ footer { font-size: 0.8rem; color: var(--muted); display: grid; gap: 4px; }
           <input type="range" id="s-d" min="0" max="1000" step="1">
         </div>
         <div class="ctl">
-          <div class="head"><label for="s-w">Field width, median</label><output id="o-w"></output></div>
+          <div class="head"><label for="s-w">Field width, mean</label><output id="o-w"></output></div>
           <input type="range" id="s-w" min="0" max="1000" step="1">
         </div>
         <div class="ctl">
@@ -127,7 +127,7 @@ footer { font-size: 0.8rem; color: var(--muted); display: grid; gap: 4px; }
           <label for="seed" class="hint">Random seed</label><input type="number" id="seed" min="1" max="999999" step="1" value="1">
           <button class="plain" id="reseed" type="button">New draw</button>
         </div>
-        <p class="hint">Each field is a Gaussian bump with peak 1 at a random place; width is its full width at half maximum, drawn from a log-normal: the median stays where its slider puts it, and spread (the standard deviation of log width) widens the distribution around it, which raises the mean. Each cell's number of fields is Poisson. Changing one setting keeps every other draw, so maps change smoothly.</p>
+        <p class="hint">Each field is a Gaussian bump with peak 1 at a random place; width is its full width at half maximum, drawn from a log-normal: the mean stays where its slider puts it, and spread (the standard deviation of log width) widens the distribution around it, adding narrower and wider fields. Each cell's number of fields is Poisson. Changing one setting keeps every other draw, so maps change smoothly.</p>
       </section>
 
       <section class="panel" aria-labelledby="t-sim">
@@ -215,7 +215,8 @@ function gaussFrom(r) { const u = Math.max(r(), 1e-12); return Math.sqrt(-2 * Ma
 // fields from another (so the first fields stay put as the rate grows).
 function cellFields(P, i) {
   const rc = mulberry32(seedFor(P.seed, i, 1)), rf = mulberry32(seedFor(P.seed, i, 2));
-  const lam = P.dens * N / 1e4, sigMed = P.fw / (2 * Math.sqrt(2 * Math.LN2));
+  // P.fw is the mean width; a log-normal's median is its mean times exp(-s^2 / 2).
+  const lam = P.dens * N / 1e4, sigMed = P.fw / (2 * Math.sqrt(2 * Math.LN2)) * Math.exp(-0.5 * P.spread * P.spread);
   const n = poissonInv(rc(), lam), out = new Float64Array(3 * n);
   for (let k = 0; k < n; k++) { out[3 * k] = rf() * L; out[3 * k + 1] = rf() * L; out[3 * k + 2] = sigMed * Math.exp(P.spread * gaussFrom(rf)); }
   return out;
@@ -383,7 +384,8 @@ function renderLabels() {
   const P = st.P, w = P.fw, s = P.spread;
   $("o-d").textContent = SL.D.fmt(P.D);
   $("o-w").textContent = SL.fw.fmt(w);
-  $("o-s").textContent = s.toFixed(2) + " (5–95%: " + (w * Math.exp(-1.645 * s)).toFixed(1) + "–" + (w * Math.exp(1.645 * s)).toFixed(1) + ")";
+  const med = w * Math.exp(-0.5 * s * s);
+  $("o-s").textContent = s.toFixed(2) + " (5–95%: " + (med * Math.exp(-1.645 * s)).toFixed(1) + "–" + (med * Math.exp(1.645 * s)).toFixed(1) + ")";
   $("o-n").textContent = SL.dens.fmt(P.dens);
   $("h-n").textContent = "About " + (P.dens * N / 1e4).toFixed(1) + " fields per cell in this 128 × 128 space (Poisson).";
 }
@@ -402,7 +404,7 @@ function probit(p) {
 // Poisson fields at density rho: mean rate mu = rho E[2 pi s^2], covariance C(d) = rho E[pi s^2 exp(-d^2 / 4 s^2)].
 // Cosine of rates -> (C + mu^2) / (C(0) + mu^2); after removing the mean -> C / C(0).
 function expected(P) {
-  const rho = P.dens / 1e4, sm = P.fw / FWHM, Q = 64, C = new Float64Array(H + 1);
+  const rho = P.dens / 1e4, sm = P.fw / FWHM * Math.exp(-0.5 * P.spread * P.spread), Q = 64, C = new Float64Array(H + 1);
   let mu = 0;
   for (let q = 0; q < Q; q++) {
     const sg = sm * Math.exp(P.spread * probit((q + 0.5) / Q)), w = rho / Q;
@@ -601,7 +603,8 @@ function drawStats(res, E) {
     rows.push(["Cells", String(n)]);
     rows.push(["Fields per cell", "mean " + (s / n).toFixed(2) + " (expected " + (P.dens * N / 1e4).toFixed(2) + "), max " + mx]);
     rows.push(["Cells with no field", (100 * z / n).toFixed(1) + "%"]);
-    rows.push(["Field width", "median " + q(0.5) + ", 5–95% " + q(0.05) + "–" + q(0.95) + " cells"]);
+    const wmean = w.length ? (w.reduce((a, v) => a + v, 0) / w.length).toFixed(1) : "–";
+    rows.push(["Field width", "mean " + wmean + ", median " + q(0.5) + ", 5–95% " + q(0.05) + "–" + q(0.95) + " cells"]);
     rows.push(["Kernel half-width", (isFinite(hwM) ? hwM.toFixed(1) : "beyond 64") + " cells (expected " + (isFinite(hwE) ? hwE.toFixed(1) : "–") + ")"]);
     rows.push(["Far-field similarity", tailMean(res.radial).toFixed(3) + " (expected " + E.floor.toFixed(3) + ")"]);
     rows.push(["Places with no active cell", (100 * (1 - res.nzFrac)).toFixed(2) + "%"]);
