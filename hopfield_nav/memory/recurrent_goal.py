@@ -51,8 +51,19 @@ class RecurrentGoalMemory:
     is_recurrent_goal_memory = True                 # GridMemoryReadout.signal dispatches on it
 
     def __init__(self, path: str, device="cpu", arena_size: int = 20,
-                 c_scale: float = 0.5, c_min: float = 0.5, skip_stays: bool = False):
+                 c_scale: float = 0.5, c_min: float = 0.5, skip_stays: bool = False,
+                 record: str = ""):
         self.path, self.device = str(path), str(device)
+        # record: write the agent's movement to this .npz at exit (arena slot,
+        # cell, heading, store flag, known, new-episode mark per read, and each
+        # arena's goal), for training the memory on the agent's own paths
+        # (analysis/idea4/train_replay.py, plan §7b.15). Needs tag().
+        self.record = str(record)
+        if self.record:
+            self.rec = {k: [] for k in ("arena", "x", "y", "psi", "flag", "known", "newep")}
+            self.rec_goals, self._newep = {}, False
+            import atexit
+            atexit.register(self.save_record)
         self.model = _load(self.path, self.device)
         self.h = self.model.init_state(1, self.device)
         self.flag = 0.0
@@ -78,6 +89,24 @@ class RecurrentGoalMemory:
         self.last_cell, self.last_out = None, None      # a new mini-episode always steps
         if not hasattr(self, "stats"):
             self.stats = {}
+        if self.record:
+            self._newep = True
+            self.rec_goals[int(info["arena"])] = tuple(int(v) for v in info["goal"])
+
+    def save_record(self) -> None:
+        if not self.record or not self.rec["arena"]:
+            return
+        A = max(self.rec_goals) + 1
+        goals = np.array([self.rec_goals.get(j, (-1, -1)) for j in range(A)], dtype=np.int16)
+        r = self.rec
+        np.savez_compressed(
+            self.record, arena=np.array(r["arena"], np.int8), x=np.array(r["x"], np.int8),
+            y=np.array(r["y"], np.int8), psi=np.array(r["psi"], np.float32),
+            flag=np.array(r["flag"], bool), known=np.array(r["known"], bool),
+            newep=np.array(r["newep"], bool), goals=goals, arena_size=self.arena_size)
+        print(f"[recurrent_goal] recorded {len(r['arena'])} reads over {A} arenas -> "
+              f"{self.record}", flush=True)
+        r["arena"].clear()                               # write once
 
     def block_stats(self, block: int) -> dict:
         """Per arena of ``block``: reads with the goal stored (far-read hit
@@ -107,6 +136,7 @@ class RecurrentGoalMemory:
         new = object.__new__(RecurrentGoalMemory)
         new.__dict__.update(self.__dict__)
         new.h = self.h.clone()
+        new.record = ""                                  # only the live memory records
         return new
 
     @torch.no_grad()
@@ -134,6 +164,16 @@ def recurrent_signal(readout, memories, views, psi, positions, env_offset):
     moves = []
     for b, m in enumerate(memories):
         cell = (int(positions[b, 0]), int(positions[b, 1]))
+        if getattr(m, "record", "") and getattr(m, "info", None) is not None:
+            r = m.rec
+            r["arena"].append(int(m.info["arena"]))
+            r["x"].append(cell[0])
+            r["y"].append(cell[1])
+            r["psi"].append(float(np.asarray(psi).reshape(-1)[b]))
+            r["flag"].append(m.flag > 0)
+            r["known"].append(bool(m.info["known"]))
+            r["newep"].append(m._newep)
+            m._newep = False
         prev = m.last_cell
         moves.append(None if prev is None else
                      (abs(cell[0] - prev[0]) > 0) + (abs(cell[1] - prev[1]) > 0))

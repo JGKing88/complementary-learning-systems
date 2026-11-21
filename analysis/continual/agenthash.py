@@ -508,6 +508,10 @@ def main() -> None:
     p.add_argument("--recurrent_skip_stays", action="store_true",
                    help="step the recurrent memory only when the agent's cell changes "
                         "(its training walks move one cell every step)")
+    p.add_argument("--record_memory", default=None,
+                   help="with an idea 4 memory: write the agent's movement (arena, cell, "
+                        "heading, store flag, known per read; goals) to this .npz, for "
+                        "analysis/idea4/train_replay.py")
     p.add_argument("--goal_radius", type=float, default=None,
                    help="Override EnvConfig.goal_radius from the saved checkpoint. "
                         "Default: use the value saved at training time (or 0.5 for "
@@ -640,7 +644,8 @@ def main() -> None:
             return RecurrentGoalMemory(args.recurrent_memory, device=device,
                                        arena_size=cfg.env.size,
                                        c_scale=args.recurrent_c_scale,
-                                       skip_stays=args.recurrent_skip_stays)
+                                       skip_stays=args.recurrent_skip_stays,
+                                       record=args.record_memory or "")
         print(f"[agenthash] recurrent_memory={args.recurrent_memory}  "
               f"c_scale={args.recurrent_c_scale}  skip_stays={args.recurrent_skip_stays}")
 
