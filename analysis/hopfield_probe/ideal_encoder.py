@@ -71,6 +71,18 @@ constant, the mean of ``mu`` over units, from every unit instead (uniform inhibi
 mean square exactly ``1/D`` over units and is close to Gaussian, so about a fraction ``f`` of units
 are active at each place (``f = 0.5`` is the plain ReLU).
 
+``fast=a, r_fast=rs`` gives the kernel a second, faster scale: the last ``round(a * n_freq)``
+frequencies are drawn with sd ``Npos / (2 pi rs)`` (their own stream, so ``fast=0`` is the
+original draw). With equal weights a share ``a`` of the code's power sits on the fast waves and
+the expected kernel is ``(1 - a) exp(-d^2/2r^2) + a exp(-d^2/2rs^2)``.
+
+``grid_fast=a`` (needs ``relu_mix``) adds a direct input from the grid code before the threshold:
+unit u's drive is ``sqrt(1 - a) (Q z)_u + sqrt(a) g_u``, with ``g = W (grid code)`` a fixed random
+projection (``grid_seed``), each unit centred and scaled to variance ``1/D`` over 16,384 random
+scaffold cells. ``grid_units=f`` instead gives a share ``f`` of the units the grid input alone
+(``a = 1``) and leaves the rest untouched: the same fast input split across units instead of
+within them.
+
 Layout convention: block row ``i * l + j`` with ``i`` the x phase, ``j`` the y
 phase, as ``encode.grid_codes`` builds it.
 """
@@ -100,13 +112,18 @@ def crt_harmonics(n: np.ndarray, lambdas) -> np.ndarray:
 
 
 def draw_frequencies(r: float, n_freq: int, seed: int, npos: int,
-                     nmin: float = 0.0) -> np.ndarray:
+                     nmin: float = 0.0, fast: float = 0.0, r_fast: float = 2.0) -> np.ndarray:
     """``(n_freq, 2)`` int64 frequency vectors in ``(-npos/2, npos/2]``.
 
     ``nmin > 0`` removes the slow waves: candidates with ``|n| < nmin`` are rejected and the
     draw continues from the same stream until ``n_freq`` are kept, so the kept set is the
     ``nmin = 0`` set's fast waves plus faster replacements. ``nmin = 0`` is the original draw.
     """
+    n_fast = int(round(float(fast) * int(n_freq)))
+    if n_fast > 0:
+        slow = draw_frequencies(r, int(n_freq) - n_fast, seed, npos, nmin)
+        quick = draw_frequencies(r_fast, n_fast, int(seed) + 1000003, npos)
+        return np.concatenate([slow, quick])
     sigma = npos / (2.0 * math.pi * float(r))
     rng = np.random.RandomState(int(seed))
     half = npos // 2
@@ -147,7 +164,9 @@ class IdealEncoder(torch.nn.Module):
                  freqs: str | np.ndarray | None = None,
                  binary: bool = False, symmetric: bool = False,
                  relu_mix: bool = False, center: bool = False, rot_seed: int = 0,
-                 center_global: bool = False, active: float = 0.5, nmin: float = 0.0):
+                 center_global: bool = False, active: float = 0.5, nmin: float = 0.0,
+                 fast: float = 0.0, r_fast: float = 2.0, grid_fast: float = 0.0,
+                 grid_units: float = 0.0, grid_seed: int = 0, grid_fwhm: float = 0.25):
         super().__init__()
         self.binary = bool(binary)
         self.relu_mix = bool(relu_mix)
@@ -156,6 +175,17 @@ class IdealEncoder(torch.nn.Module):
         self.center_global = bool(center_global)
         self.active = float(active)
         self.nmin = float(nmin)
+        self.fast = float(fast)
+        self.r_fast = float(r_fast)
+        self.grid_fast = float(grid_fast)
+        self.grid_units = float(grid_units)
+        self.grid_seed = int(grid_seed)
+        self.grid_fwhm = float(grid_fwhm)
+        self.has_grid = bool(self.grid_fast or self.grid_units)
+        if self.has_grid and not relu_mix:
+            raise ValueError("grid_fast and grid_units need relu_mix=1")
+        if self.grid_fast and self.grid_units:
+            raise ValueError("grid_fast and grid_units are alternatives")
         if (self.center or self.center_global or self.active != 0.5) and not self.relu_mix:
             raise ValueError("center, center_global and active need relu_mix=1")
         if self.center and self.center_global:
@@ -193,7 +223,8 @@ class IdealEncoder(torch.nn.Module):
         # subset of a larger table) in place of the Gaussian draw.
         self.freqs_path = freqs if isinstance(freqs, str) else None
         if freqs is None:
-            freqs = draw_frequencies(self.r, self.n_freq, self.seed, self.npos, self.nmin)
+            freqs = draw_frequencies(self.r, self.n_freq, self.seed, self.npos, self.nmin,
+                                     self.fast, self.r_fast)
         else:
             freqs = np.load(freqs) if isinstance(freqs, str) else np.asarray(freqs)
             freqs = np.rint(freqs).astype(np.int64)
@@ -226,6 +257,21 @@ class IdealEncoder(torch.nn.Module):
             self.register_buffer("mu", torch.zeros(D, dtype=torch.float64))
             from statistics import NormalDist
             self.thresh = NormalDist().inv_cdf(1.0 - self.active) / math.sqrt(D)
+            if self.has_grid:
+                from .encode import grid_codes
+                gr = np.random.default_rng(self.grid_seed + 777)
+                W = gr.standard_normal((D, self.in_dim))
+                xs, ys = gr.integers(0, self.npos, 16384), gr.integers(0, self.npos, 16384)
+                u = grid_codes(self.lambdas, xs, ys, self.grid_fwhm).astype(np.float64) @ W.T
+                scale = 1.0 / (u.std(0) * math.sqrt(D))
+                if self.grid_units:
+                    a = (np.arange(D) < round(self.grid_units * D)).astype(np.float64)
+                else:
+                    a = np.full(D, self.grid_fast)
+                self.register_buffer("grid_w", torch.from_numpy(
+                    W * (scale * np.sqrt(a))[:, None]))
+                self.register_buffer("grid_b", torch.from_numpy(u.mean(0) * scale * np.sqrt(a)))
+                self.register_buffer("slow_amp", torch.from_numpy(np.sqrt(1.0 - a)))
             if self.center or self.center_global:
                 # mu = mean of the uncentred code relu(Q z - t)/|.| over random scaffold cells
                 saved = (self.center, self.center_global)
@@ -234,7 +280,8 @@ class IdealEncoder(torch.nn.Module):
                 xs, ys = g.integers(0, self.npos, 65536), g.integers(0, self.npos, 65536)
                 acc = np.zeros(D)
                 for i in range(0, len(xs), 8192):
-                    acc += self._nonneg(self._waves_np(xs[i:i + 8192], ys[i:i + 8192])).sum(0)
+                    acc += self._nonneg(self._waves_np(xs[i:i + 8192], ys[i:i + 8192]),
+                                        self._grid_np(xs[i:i + 8192], ys[i:i + 8192])).sum(0)
                 mu = acc / len(xs)
                 self.mu_unit_spread = float(mu.std() / mu.mean())
                 self.mu = torch.from_numpy(np.full(D, mu.mean()) if saved[1] else mu)
@@ -261,17 +308,37 @@ class IdealEncoder(torch.nn.Module):
                 cols.append(torch.atan2(marg @ s, marg @ c))
         return torch.stack(cols, dim=1)
 
-    def _nonneg(self, z):
-        """``relu(Q z) / |.|``, then ``- mu`` and renormalised if ``center`` (numpy or torch)."""
+    def _grid_np(self, xs, ys):
+        """Grid codes for ``closed_form`` when the code has a direct grid input, else None."""
+        if not self.has_grid:
+            return None
+        from .encode import grid_codes
+        return grid_codes(self.lambdas, xs, ys, self.grid_fwhm).astype(np.float64)
+
+    def drive(self, z, g=None):
+        """Each unit's input before the threshold: ``Q z``, plus the grid input if any."""
+        if isinstance(z, torch.Tensor):
+            y = z @ self.rot.to(z).T
+            if self.has_grid:
+                y = y * self.slow_amp.to(y) + g.to(y) @ self.grid_w.to(y).T - self.grid_b.to(y)
+            return y
+        y = z @ self.rot.cpu().numpy().T
+        if self.has_grid:
+            y = y * self.slow_amp.cpu().numpy() + g @ self.grid_w.cpu().numpy().T \
+                - self.grid_b.cpu().numpy()
+        return y
+
+    def _nonneg(self, z, g=None):
+        """``relu(drive - t) / |.|``, then ``- mu`` and renormalised if ``center`` (numpy or torch)."""
         sub = self.center or self.center_global
         if isinstance(z, torch.Tensor):
-            y = torch.clamp(z @ self.rot.to(z).T - self.thresh, min=0.0)
+            y = torch.clamp(self.drive(z, g) - self.thresh, min=0.0)
             y = y / torch.linalg.norm(y, dim=1, keepdim=True).clamp_min(1e-12)
             if sub:
                 y = y - self.mu.to(y)
                 y = y / torch.linalg.norm(y, dim=1, keepdim=True).clamp_min(1e-12)
             return y
-        y = np.maximum(z @ self.rot.cpu().numpy().T - self.thresh, 0.0)
+        y = np.maximum(self.drive(z, g) - self.thresh, 0.0)
         y = y / np.maximum(np.linalg.norm(y, axis=1, keepdims=True), 1e-12)
         if sub:
             y = y - self.mu.cpu().numpy()
@@ -288,7 +355,7 @@ class IdealEncoder(torch.nn.Module):
         if self.binary:
             out = _binarize(out)
         if self.relu_mix:
-            out = self._nonneg(out)
+            out = self._nonneg(out, codes.to(torch.float64))
         return out.to(codes.dtype if codes.is_floating_point()
                       else torch.float32)
 
@@ -308,7 +375,7 @@ class IdealEncoder(torch.nn.Module):
         out = self._waves_np(xs, ys)
         if self.binary:
             return _binarize(out)
-        return self._nonneg(out) if self.relu_mix else out
+        return self._nonneg(out, self._grid_np(xs, ys)) if self.relu_mix else out
 
 
 def hadamard_rotation(signs: np.ndarray) -> np.ndarray:
@@ -372,10 +439,10 @@ def parse_ideal_spec(spec: str) -> dict:
         if k in ("relu_mix", "center", "center_global"):
             kw[k] = bool(int(v))
             continue
-        if k in ("active", "nmin"):
+        if k in ("active", "nmin", "fast", "r_fast", "grid_fast", "grid_units", "grid_fwhm"):
             kw[k] = float(v)
             continue
-        if k == "rot_seed":
+        if k in ("rot_seed", "grid_seed"):
             kw[k] = int(v)
             continue
         if k not in ("r", "n_freq", "seed", "gain"):

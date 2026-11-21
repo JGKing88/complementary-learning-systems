@@ -1,0 +1,20 @@
+ideal:r=23.2,BASE,active=0.1|base p10 r23.2
+ideal:r=16,BASE,active=0.1|base p10 r16
+ideal:r=23.2,BASE,active=0.1,fast=0.05,r_fast=2|gauss fast 0.05
+ideal:r=23.2,BASE,active=0.1,fast=0.1,r_fast=2|gauss fast 0.1
+ideal:r=23.2,BASE,active=0.1,fast=0.2,r_fast=2|gauss fast 0.2
+ideal:r=23.2,BASE,active=0.1,fast=0.3,r_fast=2|gauss fast 0.3
+ideal:r=23.2,BASE,active=0.1,fast=0.5,r_fast=2|gauss fast 0.5
+ideal:r=23.2,BASE,active=0.1,grid_fast=0.05|grid fast 0.05
+ideal:r=23.2,BASE,active=0.1,grid_fast=0.1|grid fast 0.1
+ideal:r=23.2,BASE,active=0.1,grid_fast=0.2|grid fast 0.2
+ideal:r=23.2,BASE,active=0.1,grid_fast=0.3|grid fast 0.3
+ideal:r=23.2,BASE,active=0.1,grid_fast=0.5|grid fast 0.5
+ideal:r=23.2,BASE,active=0.1,grid_fast=0.999|grid only
+ideal:r=32,BASE,active=0.1,grid_fast=0.3|grid fast 0.3 r32
+ideal:r=32,BASE,active=0.1,grid_fast=0.5|grid fast 0.5 r32
+ideal:r=23.2,BASE,active=0.1,grid_units=0.3|grid units 0.3
+ideal:r=23.2,BASE,active=0.1,grid_units=0.5|grid units 0.5
+ideal:r=16,BASE,center_global=1|dense r16 inh
+ideal:r=16,BASE,center_global=1,grid_fast=0.1|dense r16 inh grid 0.1
+ideal:r=16,BASE,center_global=1,grid_fast=0.3|dense r16 inh grid 0.3
