@@ -1,0 +1,14 @@
+ideal:r=4.2,BASE,active=0.1|single r4.2 step 1
+ideal:r=4.2,BASE,active=0.1|single r4.2 step 4|--basis_step 4
+ideal:r=23.2,BASE,active=0.1,fast=0.5,r_fast=3|rf3 0.5 step 4 D1024|--basis_step 4
+ideal:r=23.2,B2048,active=0.1,fast=0.5,r_fast=3|rf3 0.5 step 4 D4096|--basis_step 4
+ideal:r=23.2,B4096,active=0.1,fast=0.5,r_fast=3|rf3 0.5 step 4 D8192|--basis_step 4
+ideal:r=23.2,BASE,active=0.1,fast=0.5,r_fast=2|rf2 0.5 step 4 D1024|--basis_step 4
+ideal:r=23.2,B2048,active=0.1,fast=0.5,r_fast=2|rf2 0.5 step 4 D4096|--basis_step 4
+ideal:r=23.2,B4096,active=0.1,fast=0.5,r_fast=2|rf2 0.5 step 4 D8192|--basis_step 4
+ideal:r=23.2,B4096,active=0.1,fast=0.5,r_fast=3|rf3 0.5 step 2 D8192|--basis_step 2
+ideal:r=23.2,B4096,active=0.1,fast=0.5,r_fast=3|rf3 0.5 step 1 D8192
+ideal:r=23.2,B2048,active=0.1,fast=0.3,r_fast=3|rf3 0.3 step 4 D4096|--basis_step 4
+ideal:r=32,B2048,active=0.1,fast=0.5,r_fast=3|r32 rf3 0.5 step 4 D4096|--basis_step 4
+ideal:r=23.2,BASE,active=0.1,fast=0.3,r_fast=3|rf3 0.3 step 4 D1024|--basis_step 4
+ideal:r=23.2,BASE,active=0.1,fast=0.3,r_fast=3|rf3 0.3 step 1 D1024
