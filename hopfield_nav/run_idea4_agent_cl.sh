@@ -18,13 +18,18 @@
 #     [N_ENVS=6] [ITERS_PER_BLOCK=40] [MAX_STEPS=200] [STOCHASTIC=1] [C_SCALE=0.5] [SKIP_STAYS=0] \
 #     REPO=<code snapshot> sbatch hopfield_nav/run_idea4_agent_cl.sh
 #
+# A controller trained around idea 4's memory (§7b.15 arms) takes CKPT=<its
+# navigate_u*.pt> and no MEM: arms 1-2 name their frozen memory in their config
+# (agenthash reads it from there), arms 3-4 hold the memory in their own weights
+# and recurrent state.
+#
 # Writes $CLS_RUNS/idea4/agent_cl/cl_<TAG>.json, the plotter's panels and the
 # retention summary.
 
 set -euo pipefail
 REPO=${REPO:-/orcd/home/002/jackking/cls/.claude/worktrees/sensory-key-retrieval}
 CKPT=${CKPT:-/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_navp2_task3r_k2_h128_gmlp_s42_24342872/navigate_u3800.pt}
-MEM=${MEM:?set MEM to an idea 4 memory.pt}
+MEM=${MEM:-}
 TAG=${TAG:?set TAG}
 N_ENVS=${N_ENVS:-6}
 ITERS_PER_BLOCK=${ITERS_PER_BLOCK:-40}
@@ -48,7 +53,7 @@ echo "[i4agent] scaffold cache: $scaffold"
 prefix="$OUT/cl_${TAG}"
 python -u -m analysis.continual.agenthash \
     --out "$prefix.json" \
-    --run_name "idea 1 controller + idea 4 memory ($TAG), one store per env$([ "$STOCHASTIC" = "1" ] && echo ", sampled")" \
+    --run_name "idea 4 memory agent ($TAG), one store per env$([ "$STOCHASTIC" = "1" ] && echo ", sampled")" \
     --ckpt "$CKPT" --device cuda \
     --n_envs "$N_ENVS" --iters_per_block "$ITERS_PER_BLOCK" \
     --max_steps "$MAX_STEPS" --seed "$SEED" --num_full_iters 1 \
@@ -56,7 +61,7 @@ python -u -m analysis.continual.agenthash \
     --static_vectorhash --scaffold_cache "$scaffold" --mmap \
     --lock_store_after_goal --oracle_store_at_goal \
     --oracle_lock_store_not_at_goal --goal_radius 1 \
-    --recurrent_memory "$MEM" --recurrent_c_scale "$C_SCALE" \
+    $([ -n "$MEM" ] && echo --recurrent_memory "$MEM" --recurrent_c_scale "$C_SCALE") \
     $([ "$SKIP_STAYS" = "1" ] && echo --recurrent_skip_stays) \
     $([ "$STOCHASTIC" = "1" ] && echo --stochastic_policy)
 python -u -m analysis.continual.plotting --history "$prefix.json" --out_prefix "$prefix" \
