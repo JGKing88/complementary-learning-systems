@@ -2314,7 +2314,12 @@ whose controller does not yet use d, runs 80 steps at KL 0.005. Over the
 same 100 updates arm 5's known_reached went 0.57, 0.36, 0.29 while its
 steps to a known goal went 59, 29, 15. In 5b's 3-update smoke run the first
 update took 7 steps (arm 5: 3, arm 1: 8) and the memory moved a tenth as
-far as the controller.
+far as the controller. In its first 50 updates 5b took 6 to 13 steps per
+update. To rule out a replay bug, arm 5b's u50 was forked at lr 0 for one
+update: approx_kl 0.000 and clip_frac 0 over all 80 steps, so PPO's replay
+of the memory from a zero state matches the rollout. The early stops come
+from how far a small change in the memory's weights moves a policy that
+follows d.
 
 Smoke tests passed for every path. Arms 3 and 4 run at about twice the time
 per update of the frozen arms (backpropagation through the memory), so they
