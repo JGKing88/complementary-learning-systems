@@ -969,8 +969,25 @@ def train_navigate(
 
     if load_checkpoint is not None:
         ck = torch.load(load_checkpoint, map_location=device, weights_only=False)
-        agent.load_state_dict(ck["agent_state_dict"])
-        print(f"Loaded agent state from {load_checkpoint}", flush=True)
+        sd = ck["agent_state_dict"]
+        if (getattr(agent, "has_trainable_memory", False)
+                and not any(k.startswith("memory.") for k in sd)):
+            # A plain controller forked into one with idea 4's memory inside
+            # (GRID_MLP_NAV_PLAN §7b.15 arm 5): the controller's weights come
+            # from the parent; the memory (--trainable_memory_init), the frozen
+            # grid MLP and the grid tables keep what the constructor built.
+            own = ("memory.", "grid_table_", "grid_mlp.")
+            missing, unexpected = agent.load_state_dict(sd, strict=False)
+            bad = [k for k in missing if not k.startswith(own)]
+            if bad or unexpected:
+                raise ValueError(f"{load_checkpoint}: forking into a memory agent "
+                                 f"left {bad} unloaded and {list(unexpected)} unused")
+            print(f"Loaded the controller from {load_checkpoint}; the memory "
+                  f"from {cfg.agent.trainable_memory_init or 'random weights'}",
+                  flush=True)
+        else:
+            agent.load_state_dict(sd)
+            print(f"Loaded agent state from {load_checkpoint}", flush=True)
         if getattr(cfg, "reset_kappa_head", False):
             head = getattr(agent, "polar_head", None)
             if head is None:
