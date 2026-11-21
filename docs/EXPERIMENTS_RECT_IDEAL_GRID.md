@@ -358,3 +358,49 @@ that share of the time over every unit at 2048 sample places (a checkbox turns t
   theta = 0 from 47% to 53%).
 * Whole-scaffold statistics and probe results exist only at the six computed shares; the results
   panel marks the one nearest the slider.
+
+## Independent random bumps through the same probe (2026-11-21)
+
+`analysis/hopfield_probe/bump_encoder.py` (`bump:` spec), `analysis/rect_ideal/bump.py`,
+`run_bump_probe.sh`, `bump_summary.py`; results `$CLS_RESULTS/rect_ideal_grid_bump/`. Each unit has a
+Poisson number of Gaussian fields (peak 1, uniform centres on the 1716-cell torus, widths log-normal
+with the mean FWHM fixed), rates scaled to unit length per place; the probe settings are
+`run_probe.sh`'s. Every code has the rectified ideal's kernel: FWHM 27 cells with one width
+(kernel half-width = FWHM / sqrt(2)), or mean FWHM 19.37 with spread 0.5. Measured half-widths after
+inhibition are 19.08 to 19.51 cells against 19.09 from the formula, and the raw floors match
+2 mu / (1 + 2 mu) within 3%. Densities 0.2, 0.66 and 0.85 fields per unit per 100 x 100 cells give
+the rectified ideal's 59, 194 and 251 fields per unit at 2%, 10% and 20% active.
+
+1024 units, one recall step, with inhibition (K = 5 / K = 20):
+
+| code | fields per unit | direction error | exact retrieval | basin (cells) | dead goals |
+|---|---|---|---|---|---|
+| signed ideal | | 1.0 / 1.3 | 1.00 / 1.00 | 32.1 / 22.1 | 0 / 0 |
+| rectified 2% | 58 | 12.8 / 12.9 | 0.41 / 0.43 | 3.4 / 3.3 | 0.17 / 0.17 |
+| bumps, 0.2 per 100^2 | 59 | 4.8 / 4.9 | 0.86 / 0.85 | 13.9 / 11.4 | 0 / 0 |
+| rectified 10% | 194 | 4.8 / 4.9 | 1.00 / 1.00 | 28.7 / 23.4 | 0 / 0 |
+| bumps, 0.66 | 194 | 2.8 / 2.9 | 1.00 / 1.00 | 31.6 / 22.9 | 0 / 0 |
+| rectified 20% | 251 | 3.0 / 3.1 | 1.00 / 1.00 | 32.1 / 23.5 | 0 / 0 |
+| bumps, 0.85 | 250 | 2.7 / 2.7 | 1.00 / 1.00 | 31.4 / 22.6 | 0 / 0 |
+| bumps, 3 | 883 | 1.8 / 1.9 | 1.00 / 1.00 | 30.9 / 23.2 | 0 / 0 |
+| bumps, 0.05 | 15 | 13.8 / 13.9 | 0.17 / 0.18 | -0.5 / -0.6 | 0.42 / 0.42 |
+| bumps, 0.66, spread 0.5 | 194 | 7.0 / 7.1 | 1.00 / 1.00 | 41.2 / 28.4 | 0 / 0 |
+
+At 0.66 fields per 100^2 and K = 5 with inhibition: 256 units 6.1 degrees, exact 0.62, basin 5.1;
+4096 units 1.7 degrees, exact 1.00, basin 39.7.
+
+* **At the same kernel and the same number of fields per unit, independent bumps do as well as the
+  rectified ideal or better.** The gap is largest when fields are few: with 59 fields per unit the
+  bumps have a 4.8 degree direction error and exact retrieval 0.86, against 12.8 degrees and 0.41.
+  At 194 fields the bumps' direction is better (2.8 against 4.8 degrees) with the same retrieval;
+  at 250 they are level. So the rectified code's structure (fields as the tops of one smooth input)
+  gives the memory nothing that random bumps with the same kernel lack.
+* **The comparison holds field count fixed, not sparsity.** A bump's rate never reaches exactly zero
+  within 5 sigma, so with 59 fields per unit about 12 units are above half their peak at a place, and
+  many more carry small graded rates; the 2% rectified code has 20 units active and the rest exactly
+  0. Some of the bumps' advantage at low field counts may come from those tails.
+* **Without inhibition, dense bump codes crowd.** At 883 fields per unit the raw floor is 0.33; at
+  K = 20 that leaves exact retrieval 0.06 and 92% dead goals, against 1.00 and none with inhibition
+  (the same pattern as the dense rectified codes).
+* **A spread of widths trades direction for basin at a fixed kernel:** 7.0 degrees against 2.8, with
+  a basin of 41 cells against 32.
