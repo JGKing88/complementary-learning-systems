@@ -98,7 +98,7 @@ footer { font-size: 0.8rem; color: var(--muted); display: grid; gap: 4px; }
 <div class="app">
   <div class="top">
     <h1>Place-cell populations</h1>
-    <p class="sub">Build a population from random place fields and watch its similarity kernel. Space is a 128 × 128-cell square whose edges wrap, so every place has the same surroundings.</p>
+    <p class="sub">Build a population from random place fields and watch its similarity kernel. Space runs from −100 to 100 in x and y, and its edges wrap, so every place has the same surroundings. It is drawn on a 128 × 128 grid, 1.56 units per pixel.</p>
   </div>
 
   <div class="layout">
@@ -119,7 +119,7 @@ footer { font-size: 0.8rem; color: var(--muted); display: grid; gap: 4px; }
         </div>
         <svg class="plot" id="whist" viewBox="0 0 260 112" role="img" aria-label="Histogram of the field widths drawn, on a log width axis"></svg>
         <div class="ctl">
-          <div class="head"><label for="s-n">Fields per cell, per 100 × 100 cells</label><output id="o-n"></output></div>
+          <div class="head"><label for="s-n">Fields per cell, per 100 × 100 area</label><output id="o-n"></output></div>
           <input type="range" id="s-n" min="0" max="1000" step="1">
           <p class="hint" id="h-n"></p>
         </div>
@@ -176,7 +176,7 @@ footer { font-size: 0.8rem; color: var(--muted); display: grid; gap: 4px; }
               <button class="plain" id="next" type="button">Next</button>
             </div>
             <div class="tiles" id="tiles"></div>
-            <p class="hint">Each map is scaled to that cell's own peak. Click a cell to enlarge it; rings mark its fields at half maximum.</p>
+            <p class="hint">Each map is scaled to that cell's own peak. Click a cell to enlarge it; rings mark its fields at half maximum. Each map covers the whole space, x and y from −100 to 100.</p>
           </div>
         </div>
       </section>
@@ -192,7 +192,9 @@ footer { font-size: 0.8rem; color: var(--muted); display: grid; gap: 4px; }
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-const L = 128, N = L * L, H = L / 2, FWHM = 2 * Math.sqrt(2 * Math.LN2), PER_PAGE = 40;
+// The space is SPAN x SPAN units (-100 to 100), drawn on L x L pixels of U units each; positions
+// and widths inside the computation are in pixels, everything shown is in units.
+const L = 128, N = L * L, H = L / 2, SPAN = 200, U = SPAN / L, FWHM = 2 * Math.sqrt(2 * Math.LN2), PER_PAGE = 40;
 
 // ---------------------------------------------------------------- shared with the worker
 // Per-cell random streams, so changing one setting keeps every other draw.
@@ -216,7 +218,7 @@ function gaussFrom(r) { const u = Math.max(r(), 1e-12); return Math.sqrt(-2 * Ma
 function cellFields(P, i) {
   const rc = mulberry32(seedFor(P.seed, i, 1)), rf = mulberry32(seedFor(P.seed, i, 2));
   // P.fw is the mean width; a log-normal's median is its mean times exp(-s^2 / 2).
-  const lam = P.dens * N / 1e4, sigMed = P.fw / (2 * Math.sqrt(2 * Math.LN2)) * Math.exp(-0.5 * P.spread * P.spread);
+  const lam = P.dens * SPAN * SPAN / 1e4, sigMed = P.fw / (2 * Math.sqrt(2 * Math.LN2)) / U * Math.exp(-0.5 * P.spread * P.spread);
   const n = poissonInv(rc(), lam), out = new Float64Array(3 * n);
   for (let k = 0; k < n; k++) { out[3 * k] = rf() * L; out[3 * k + 1] = rf() * L; out[3 * k + 2] = sigMed * Math.exp(P.spread * gaussFrom(rf)); }
   return out;
@@ -284,7 +286,7 @@ function workerMain() {
       counts[i] = F.length / 3;
       for (let k = 0; k < F.length; k += 3) {
         addField(m, F[k], F[k + 1], F[k + 2]);
-        if (widths.length < 20000) widths.push(F[k + 2] * 2 * Math.sqrt(2 * Math.LN2));
+        if (widths.length < 20000) widths.push(F[k + 2] * 2 * Math.sqrt(2 * Math.LN2) * U);
       }
     }
     const t1 = Date.now();
@@ -353,7 +355,7 @@ function workerMain() {
 const wk = { w: null, next: 1, pending: new Map(), local: null };
 function startWorker() {
   try {
-    const src = "\"use strict\";\nconst L = 128, N = L * L, H = L / 2;\n" + [mulberry32, seedFor, poissonInv, gaussFrom, cellFields, workerMain].map(f => f.toString()).join("\n\n") +
+    const src = "\"use strict\";\nconst L = 128, N = L * L, H = L / 2, SPAN = 200, U = SPAN / L;\n" + [mulberry32, seedFor, poissonInv, gaussFrom, cellFields, workerMain].map(f => f.toString()).join("\n\n") +
       "\nworkerMain();\n";
     const w = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
     w.onmessage = e => { const { id, res, error } = e.data, p = wk.pending.get(id); if (!p) return; wk.pending.delete(id); error ? p.reject(new Error(error)) : p.resolve(res); };
@@ -369,10 +371,10 @@ function call(type, msg) {
 }
 
 // ---------------------------------------------------------------- settings
-const st = { P: { D: 256, fw: 20, spread: 0.3, dens: 2, seed: 1, centred: false }, page: 0, sel: 0, res: null, busy: false, again: false };
+const st = { P: { D: 256, fw: 30, spread: 0.3, dens: 1, seed: 1, centred: false }, page: 0, sel: 0, res: null, busy: false, again: false };
 const SL = {
   D: { el: "s-d", to: t => Math.round(16 * Math.pow(64, t / 1000)), from: v => 1000 * Math.log(v / 16) / Math.log(64), fmt: v => String(v) },
-  fw: { el: "s-w", to: t => 2 * Math.pow(30, t / 1000), from: v => 1000 * Math.log(v / 2) / Math.log(30), fmt: v => v.toFixed(1) + " cells" },
+  fw: { el: "s-w", to: t => 3 * Math.pow(100 / 3, t / 1000), from: v => 1000 * Math.log(v / 3) / Math.log(100 / 3), fmt: v => v.toFixed(1) },
   spread: { el: "s-s", to: t => t / 100, from: v => 100 * v, fmt: v => v.toFixed(2) },
   dens: { el: "s-n", to: t => 0.1 * Math.pow(300, t / 1000), from: v => 1000 * Math.log(v / 0.1) / Math.log(300), fmt: v => v < 1 ? v.toFixed(2) : v.toFixed(1) },
 };
@@ -387,7 +389,7 @@ function renderLabels() {
   const med = w * Math.exp(-0.5 * s * s);
   $("o-s").textContent = s.toFixed(2) + " (5–95%: " + (med * Math.exp(-1.645 * s)).toFixed(1) + "–" + (med * Math.exp(1.645 * s)).toFixed(1) + ")";
   $("o-n").textContent = SL.dens.fmt(P.dens);
-  $("h-n").textContent = "About " + (P.dens * N / 1e4).toFixed(1) + " fields per cell in this 128 × 128 space (Poisson).";
+  $("h-n").textContent = "About " + (P.dens * SPAN * SPAN / 1e4).toFixed(1) + " fields per cell in the whole 200 × 200 space (Poisson).";
 }
 
 // ---------------------------------------------------------------- expected kernel (many cells)
@@ -409,7 +411,7 @@ function expected(P) {
   for (let q = 0; q < Q; q++) {
     const sg = sm * Math.exp(P.spread * probit((q + 0.5) / Q)), w = rho / Q;
     mu += w * 2 * Math.PI * sg * sg;
-    for (let d = 0; d <= H; d++) C[d] += w * Math.PI * sg * sg * Math.exp(-d * d / (4 * sg * sg));
+    for (let d = 0; d <= H; d++) { const du = d * U; C[d] += w * Math.PI * sg * sg * Math.exp(-du * du / (4 * sg * sg)); }
   }
   const m2 = P.centred ? 0 : mu * mu, out = new Float64Array(H + 1);
   for (let d = 0; d <= H; d++) out[d] = (C[d] + m2) / (C[0] + m2);
@@ -460,14 +462,15 @@ function drawK2d(res, hw) {
   paint(kcanvas, (c, r) => K[((r - H + L) % L) * L + ((c - H + L) % L)], range[0], range[1], div ? LUT.div : LUT.seq);
   const out = [mk("image", { x: x0, y: y0, width: S, height: S, href: kcanvas.toDataURL(), preserveAspectRatio: "none", style: "image-rendering: pixelated" })];
   const px = d => x0 + (d + H) / L * S, py = d => y0 + (H - 1 - d + 0.5) / L * S;
-  for (const t of [-60, -30, 0, 30, 60]) {
+  for (const tu of [-100, -50, 0, 50, 100]) {
+    const t = tu / U;
     out.push(mk("line", { class: "axis", x1: px(t) + S / L / 2, x2: px(t) + S / L / 2, y1: y0 + S, y2: y0 + S + 4 }));
-    out.push(mk("text", { x: px(t) + S / L / 2, y: y0 + S + 16, "text-anchor": "middle" }, String(t)));
+    out.push(mk("text", { x: px(t) + S / L / 2, y: y0 + S + 16, "text-anchor": "middle" }, String(tu)));
     out.push(mk("line", { class: "axis", x1: x0 - 4, x2: x0, y1: py(t), y2: py(t) }));
-    out.push(mk("text", { x: x0 - 7, y: py(t) + 3.5, "text-anchor": "end" }, String(t)));
+    out.push(mk("text", { x: x0 - 7, y: py(t) + 3.5, "text-anchor": "end" }, String(tu)));
   }
-  out.push(mk("text", { class: "ttl", x: x0 + S / 2, y: y0 + S + 31, "text-anchor": "middle" }, "Δx (cells)"));
-  out.push(mk("text", { class: "ttl", x: 11, y: y0 + S / 2, "text-anchor": "middle", transform: "rotate(-90 11 " + (y0 + S / 2) + ")" }, "Δy (cells)"));
+  out.push(mk("text", { class: "ttl", x: x0 + S / 2, y: y0 + S + 31, "text-anchor": "middle" }, "Δx"));
+  out.push(mk("text", { class: "ttl", x: 11, y: y0 + S / 2, "text-anchor": "middle", transform: "rotate(-90 11 " + (y0 + S / 2) + ")" }, "Δy"));
   if (isFinite(hw)) out.push(mk("circle", { class: "ring", cx: px(0) + S / L / 2, cy: py(0), r: hw / L * S }));
   svg.replaceChildren(...out);
 }
@@ -484,12 +487,13 @@ function drawK1d(res, E) {
     out.push(mk("line", { class: "grid", x1: ml, x2: W - mr, y1: y(v), y2: y(v) }));
     out.push(mk("text", { x: ml - 6, y: y(v) + 3.5, "text-anchor": "end" }, (Math.abs(v) < 1e-9 ? 0 : v).toFixed(1)));
   }
-  for (let d = 0; d <= H; d += 16) {
+  for (const du of [0, 25, 50, 75, 100]) {
+    const d = du / U;
     out.push(mk("line", { class: "axis", x1: x(d), x2: x(d), y1: mt + ph, y2: mt + ph + 4 }));
-    out.push(mk("text", { x: x(d), y: mt + ph + 16, "text-anchor": "middle" }, String(d)));
+    out.push(mk("text", { x: x(d), y: mt + ph + 16, "text-anchor": "middle" }, String(du)));
   }
   out.push(mk("line", { class: "axis", x1: ml, x2: W - mr, y1: mt + ph, y2: mt + ph }));
-  out.push(mk("text", { class: "ttl", x: ml + pw / 2, y: Ht - 6, "text-anchor": "middle" }, "Distance between the two places (cells)"));
+  out.push(mk("text", { class: "ttl", x: ml + pw / 2, y: Ht - 6, "text-anchor": "middle" }, "Distance between the two places"));
   out.push(mk("text", { class: "ttl", x: 12, y: mt + ph / 2, "text-anchor": "middle", transform: "rotate(-90 12 " + (mt + ph / 2) + ")" }, "Similarity"));
   const path = arr => arr.map((v, d) => (d ? "L" : "M") + x(d).toFixed(1) + " " + y(v).toFixed(1)).join(" ");
   out.push(mk("path", { class: "expd", d: path(exp) }));
@@ -499,7 +503,7 @@ function drawK1d(res, E) {
     if (isFinite(hw)) {
       out.push(mk("line", { class: "mark", x1: x(hw), x2: x(hw), y1: mt, y2: mt + ph }));
       const right = x(hw) > ml + 0.7 * pw;
-      out.push(mk("text", { x: right ? x(hw) - 5 : x(hw) + 5, y: mt + 12, "text-anchor": right ? "end" : "start" }, "half-width " + hw.toFixed(1)));
+      out.push(mk("text", { x: right ? x(hw) - 5 : x(hw) + 5, y: mt + 12, "text-anchor": right ? "end" : "start" }, "half-width " + (hw * U).toFixed(1)));
     }
   }
   const hl = mk("line", { class: "hover", x1: 0, x2: 0, y1: mt, y2: mt + ph, visibility: "hidden" });
@@ -508,7 +512,7 @@ function drawK1d(res, E) {
   hit.addEventListener("pointermove", ev => {
     const r = svg.getBoundingClientRect(), sx = (ev.clientX - r.left) / r.width * W, d = Math.max(0, Math.min(H, Math.round((sx - ml) / pw * H)));
     hl.setAttribute("x1", x(d)); hl.setAttribute("x2", x(d)); hl.setAttribute("visibility", "visible");
-    $("k1d-read").textContent = "distance " + d + " cells: measured " + (meas ? meas[d].toFixed(3) : "–") + ", expected " + exp[d].toFixed(3);
+    $("k1d-read").textContent = "distance " + (d * U).toFixed(1) + ": measured " + (meas ? meas[d].toFixed(3) : "–") + ", expected " + exp[d].toFixed(3);
   });
   hit.addEventListener("pointerleave", () => { hl.setAttribute("visibility", "hidden"); $("k1d-read").textContent = "Hover over the plot to read it."; });
   out.push(hit);
@@ -536,7 +540,7 @@ function drawWidths(res) {
     out.push(mk("line", { class: "axis", x1: xt, x2: xt, y1: Ht - mb, y2: Ht - mb + 3 }));
     out.push(mk("text", { x: xt, y: Ht - mb + 14, "text-anchor": "middle" }, String(t)));
   }
-  out.push(mk("text", { class: "ttl", x: ml + pw / 2, y: Ht - 5, "text-anchor": "middle" }, "Field width (cells, log scale)"));
+  out.push(mk("text", { class: "ttl", x: ml + pw / 2, y: Ht - 5, "text-anchor": "middle" }, "Field width (log scale)"));
   const med = w[Math.floor(0.5 * (n - 1))], mean = w.reduce((s2, v) => s2 + v, 0) / n;
   out.push(mk("line", { class: "mark", x1: x(Math.log10(med)), x2: x(Math.log10(med)), y1: mt, y2: Ht - mb, style: "stroke-dasharray: none" }));
   out.push(mk("line", { class: "mark", x1: x(Math.log10(mean)), x2: x(Math.log10(mean)), y1: mt, y2: Ht - mb }));
@@ -587,7 +591,7 @@ function drawCells(units, maps) {
       }
       $("bigover").replaceChildren(...rings);
       $("bigcap").textContent = "cell " + (u + 1) + ": " + F.length / 3 + (F.length === 3 ? " field" : " fields") +
-        (F.length ? ", widths " + Array.from({ length: F.length / 3 }, (_, k) => (F[3 * k + 2] * FWHM).toFixed(0)).join(", ") + " cells" : "") + "; peak rate " + peak.toFixed(2);
+        (F.length ? ", widths " + Array.from({ length: F.length / 3 }, (_, k) => (F[3 * k + 2] * FWHM * U).toFixed(0)).join(", ") : "") + "; peak rate " + peak.toFixed(2);
     }
   });
 }
@@ -601,11 +605,11 @@ function drawStats(res, E) {
     const w = Array.from(res.widths).sort((a, b) => a - b), q = f => w.length ? w[Math.floor(f * (w.length - 1))].toFixed(1) : "–";
     const hwM = halfWidth(res.radial, tailMean(res.radial)), hwE = halfWidth(E.curve, E.floor);
     rows.push(["Cells", String(n)]);
-    rows.push(["Fields per cell", "mean " + (s / n).toFixed(2) + " (expected " + (P.dens * N / 1e4).toFixed(2) + "), max " + mx]);
+    rows.push(["Fields per cell", "mean " + (s / n).toFixed(2) + " (expected " + (P.dens * SPAN * SPAN / 1e4).toFixed(2) + "), max " + mx]);
     rows.push(["Cells with no field", (100 * z / n).toFixed(1) + "%"]);
     const wmean = w.length ? (w.reduce((a, v) => a + v, 0) / w.length).toFixed(1) : "–";
-    rows.push(["Field width", "mean " + wmean + ", median " + q(0.5) + ", 5–95% " + q(0.05) + "–" + q(0.95) + " cells"]);
-    rows.push(["Kernel half-width", (isFinite(hwM) ? hwM.toFixed(1) : "beyond 64") + " cells (expected " + (isFinite(hwE) ? hwE.toFixed(1) : "–") + ")"]);
+    rows.push(["Field width", "mean " + wmean + ", median " + q(0.5) + ", 5–95% " + q(0.05) + "–" + q(0.95)]);
+    rows.push(["Kernel half-width", (isFinite(hwM) ? (hwM * U).toFixed(1) : "beyond 100") + " (expected " + (isFinite(hwE) ? (hwE * U).toFixed(1) : "–") + ")"]);
     rows.push(["Far-field similarity", tailMean(res.radial).toFixed(3) + " (expected " + E.floor.toFixed(3) + ")"]);
     rows.push(["Places with no active cell", (100 * (1 - res.nzFrac)).toFixed(2) + "%"]);
     rows.push(["Mean rate", res.meanRate.toFixed(3) + " (expected " + E.mu.toFixed(3) + ")"]);
@@ -647,7 +651,7 @@ async function run() {
     drawWidths(res);
     drawCells(units, res.maps);
     drawStats(res, E);
-    setStatus(P.D + " cells, " + (P.dens * N / 1e4).toFixed(1) + " fields per cell on average · " + (res.tMaps + res.tKernel) + " ms" + (wk.w ? "" : " (no background thread, so the page pauses while it computes)"));
+    setStatus(P.D + " cells, " + (P.dens * SPAN * SPAN / 1e4).toFixed(1) + " fields per cell on average · " + (res.tMaps + res.tKernel) + " ms" + (wk.w ? "" : " (no background thread, so the page pauses while it computes)"));
   }
   st.busy = false;
 }
