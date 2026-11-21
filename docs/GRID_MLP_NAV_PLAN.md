@@ -2352,6 +2352,37 @@ frozen copy of a trainable agent's memory as a shadow when agenthash is
 given `--recurrent_memory` (commit 838ed83, snapshot i4_v36): same inputs,
 same states, and the frozen memory's decode diagnostics.
 
+Along the agent's path (continual protocol at 10 iterations per block,
+block 5, arenas whose goal is stored). far_hit is the fraction of reads
+more than 1.5 cells from the goal whose decoded goal lies within 1.5 cells
+of it; cos_d is the cosine of d with the true direction.
+
+| agent | revisit (trials) | steps | far_hit | cos_d | c stored / unknown |
+|---|---|---|---|---|---|
+| arm 1 u700 | 0.69 (130) | 75 | 0.00 to 0.12 | 0.20 to 0.43 | 0.6 / 0.47 |
+| arm 5 u300 | 0.49 (80) | 80 | 0.00 to 0.01 | -0.04 to 0.61 | 0.9 / 0.92 |
+| arm 5b u200 | 0.51 (90) | 78 | 0.01 to 0.03 | 0.45 to 0.63 | 0.98 / 0.97 to 1.00 |
+
+5b's memory holds 3.3 goals offline but decodes the goal on at most 3% of
+far reads along the agent's path; its d is about 60 degrees off on average,
+and its c is near 1 even where nothing is stored. Every agent searches.
+
+DAgger for the memory. §7b.14 left open what separates the scripted
+movement from the agent's. `agenthash --record_memory` now writes the
+agent's movement (arena slot, cell, heading, store flag, known per read,
+and each arena's goal; `run_idea4_record.sh` runs N protocol lifetimes on
+minted held-out arena sets) and `analysis/idea4/train_replay.py` replays
+those paths through the training pool's arenas at fresh offsets with
+`train_protocol.py`'s loss (commits ee61033, eaf7269; snapshot i4_v38). In
+the smoke run, replaying 2 recorded lifetimes of arm 1 u800 with the
+training pool's own views, the starting memory's far-read cosine fell from
+0.56 early in a lifetime to 0.13 to 0.27 later: the failure goes with the
+agent's paths, not the protocol's arenas. Round 1: 24 lifetimes of arm 1
+u800 at 40 iterations per block (job 29982788), then train_replay from
+`i4_motion_scratch_u30k`, then the agent (arm 1's and idea 1's
+controllers) on the continual protocol with the new memory, then record
+again with it.
+
 Smoke tests passed for every path. Arms 3 and 4 run at about twice the time
 per update of the frozen arms (backpropagation through the memory), so they
 have 16 links against 8.
