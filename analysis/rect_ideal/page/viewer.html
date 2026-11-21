@@ -358,6 +358,11 @@ table.heat .cell.na { background: var(--surface-2); color: var(--muted); }
 "use strict";
 // ================================================================ constants
 const $ = id => document.getElementById(id);
+// Any error the page does not handle shows in the status line, so a failure never looks like loading.
+window.addEventListener("error", e => setStatus("Page error: " + (e.message || String(e.error)) +
+  (e.lineno ? " (script line " + e.lineno + ")" : ""), true));
+window.addEventListener("unhandledrejection", e => setStatus("Page error: " + errText(e.reason) +
+  (e.reason && e.reason.stack ? " (" + String(e.reason.stack).split("\n")[1] + ")" : ""), true));
 const CHUNK = 16384;              // cells per GPU batch
 const EXT_FLOATS = 16384 * 256;   // floats per GPU read-back
 const STAT_BATCH = 128;           // units per batch when sorting by a statistic
@@ -469,14 +474,18 @@ function unpackMlp(meta, all) {
 }
 
 async function loadAll() {
+  setStatus("Loading the populations… (manifests)");
   const [M, RV, HV, RG] = await Promise.all([
     fetchText("manifest.json").then(JSON.parse), fetchText("rect_variants.json").then(JSON.parse),
     fetchText("hpc_variants.json").then(JSON.parse), fetchText("rect_gauss.b64.txt")]);
   st.M = M; NPOS = M.npos; st.RV = RV; st.HV = HV; st.RG = f64(RG);
+  setStatus("Loading the populations… (rectified codes)");
   useRectVariant(await loadRectVariant(st.rectVar));
+  setStatus("Loading the populations… (hippocampus weights)");
   await Promise.all(HV.map(v => loadHpcVariant(v.key)));
   for (const k of HPC_POPS) st.pops[k] = makeHpcPop(k);
   const P = M.populations;
+  setStatus("Loading the populations… (encoder weights)");
   const [qPlace, ...wMlp] = await Promise.all([
     fetchText(P.ideal_place.q_file), ...MLP_KEYS.map(k => fetchText(P[k].weights_file))]);
   st.pops.grid = makeGrid(P.grid);
@@ -2790,14 +2799,16 @@ function wireControls() {
   buildLuts();
   try { await loadAll(); }
   catch (e) { setStatus("Could not load the population data: " + errText(e), true); return; }
-  startWorker();
-  buildControls();
-  wireControls();
-  $("mode-hint").textContent = MODE_HINT[st.mode];
-  syncInputs();
-  drawMinimap();
-  renderChecks();
-  renderResults();
+  let stage = "the background thread";
+  try {
+    startWorker();
+    stage = "the controls"; buildControls();
+    stage = "the control events"; wireControls();
+    stage = "the arena controls"; $("mode-hint").textContent = MODE_HINT[st.mode]; syncInputs(); drawMinimap();
+    stage = "the check list"; renderChecks();
+  } catch (e) { setStatus("Could not set up " + stage + ": " + errText(e), true); console.error(e); return; }
+  try { renderResults(); }
+  catch (e) { $("res-note").textContent = "Could not draw the grid results: " + errText(e); console.error(e); }
   setStatus("Starting the GPU…");
   await initEngine();
   if (!st.engine && MLP_KEYS.includes(st.popKey)) setPop("grid");
