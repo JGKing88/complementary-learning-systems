@@ -117,7 +117,7 @@ footer { font-size: 0.8rem; color: var(--muted); display: grid; gap: 4px; }
           <div class="head"><label for="s-s">Field width, spread</label><output id="o-s"></output></div>
           <input type="range" id="s-s" min="0" max="100" step="1">
         </div>
-        <svg class="plot" id="whist" viewBox="0 0 260 92" role="img" aria-label="Histogram of the field widths drawn"></svg>
+        <svg class="plot" id="whist" viewBox="0 0 260 92" role="img" aria-label="Histogram of the field widths drawn, on a log width axis"></svg>
         <div class="ctl">
           <div class="head"><label for="s-n">Fields per cell, per 100 × 100 cells</label><output id="o-n"></output></div>
           <input type="range" id="s-n" min="0" max="1000" step="1">
@@ -127,7 +127,7 @@ footer { font-size: 0.8rem; color: var(--muted); display: grid; gap: 4px; }
           <label for="seed" class="hint">Random seed</label><input type="number" id="seed" min="1" max="999999" step="1" value="1">
           <button class="plain" id="reseed" type="button">New draw</button>
         </div>
-        <p class="hint">Each field is a Gaussian bump with peak 1 at a random place; width is its full width at half maximum, drawn from a log-normal (spread is the standard deviation of log width). Each cell's number of fields is Poisson. Changing one setting keeps every other draw, so maps change smoothly.</p>
+        <p class="hint">Each field is a Gaussian bump with peak 1 at a random place; width is its full width at half maximum, drawn from a log-normal: the median stays where its slider puts it, and spread (the standard deviation of log width) widens the distribution around it, which raises the mean. Each cell's number of fields is Poisson. Changing one setting keeps every other draw, so maps change smoothly.</p>
       </section>
 
       <section class="panel" aria-labelledby="t-sim">
@@ -513,17 +513,29 @@ function drawK1d(res, E) {
 }
 const tailMean = c => { let s = 0, n = 0; for (let d = 48; d < c.length; d++) { s += c[d]; n++; } return s / n; };
 
+// Field widths on a log axis, where a log-normal is a symmetric bump around its median and the
+// spread only widens it. The median (solid) and mean (dashed) are marked.
 function drawWidths(res) {
-  const svg = $("whist"), W = 260, Ht = 92, ml = 6, mr = 6, mt = 6, mb = 22;
+  const svg = $("whist"), W = 260, Ht = 92, ml = 6, mr = 6, mt = 14, mb = 22;
   if (!res || !res.widths.length) { svg.replaceChildren(mk("text", { x: W / 2, y: Ht / 2, "text-anchor": "middle" }, "no fields")); return; }
-  const w = Array.from(res.widths).sort((a, b) => a - b), hi = w[Math.floor(0.995 * (w.length - 1))], nb = 30, bins = new Array(nb).fill(0);
-  for (const v of w) bins[Math.min(nb - 1, Math.floor(v / hi * nb))]++;
-  const top = Math.max(...bins), bw = (W - ml - mr) / nb, out = [];
-  bins.forEach((b, i) => { const h = b / top * (Ht - mt - mb); out.push(mk("rect", { class: "bar", x: ml + i * bw + 0.5, y: Ht - mb - h, width: Math.max(0.5, bw - 1), height: h, rx: 1 })); });
+  const w = Array.from(res.widths).sort((a, b) => a - b), n = w.length;
+  const lo = Math.log10(Math.max(0.5, w[Math.floor(0.002 * (n - 1))])), hi = Math.log10(w[Math.floor(0.998 * (n - 1))]);
+  const a = lo - 0.05, b = Math.max(hi + 0.05, a + 0.3), nb = 30, bins = new Array(nb).fill(0);
+  for (const v of w) { const t = (Math.log10(v) - a) / (b - a); if (t >= 0 && t < 1) bins[Math.floor(t * nb)]++; }
+  const top = Math.max(...bins), pw = W - ml - mr, bw = pw / nb, x = lv => ml + (lv - a) / (b - a) * pw, out = [];
+  bins.forEach((c, i) => { const h = c / top * (Ht - mt - mb); out.push(mk("rect", { class: "bar", x: ml + i * bw + 0.5, y: Ht - mb - h, width: Math.max(0.5, bw - 1), height: h, rx: 1 })); });
   out.push(mk("line", { class: "axis", x1: ml, x2: W - mr, y1: Ht - mb, y2: Ht - mb }));
-  out.push(mk("text", { x: ml, y: Ht - 7 }, "0"));
-  out.push(mk("text", { x: W - mr, y: Ht - 7, "text-anchor": "end" }, hi.toFixed(0) + " cells"));
-  out.push(mk("text", { x: W / 2, y: Ht - 7, "text-anchor": "middle" }, "field widths drawn (" + w.length.toLocaleString() + ")"));
+  for (const t of [0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500]) {
+    const lt = Math.log10(t);
+    if (lt < a || lt > b) continue;
+    out.push(mk("line", { class: "axis", x1: x(lt), x2: x(lt), y1: Ht - mb, y2: Ht - mb + 3 }));
+    out.push(mk("text", { x: x(lt), y: Ht - mb + 13, "text-anchor": "middle" }, String(t)));
+  }
+  const med = w[Math.floor(0.5 * (n - 1))], mean = w.reduce((s2, v) => s2 + v, 0) / n;
+  out.push(mk("line", { class: "mark", x1: x(Math.log10(med)), x2: x(Math.log10(med)), y1: mt - 4, y2: Ht - mb, style: "stroke-dasharray: none" }));
+  out.push(mk("line", { class: "mark", x1: x(Math.log10(mean)), x2: x(Math.log10(mean)), y1: mt - 4, y2: Ht - mb }));
+  out.push(mk("text", { x: ml, y: 9 }, "median " + med.toFixed(1) + " · mean " + mean.toFixed(1) + " (dashed)"));
+  out.push(mk("text", { x: W - mr, y: 9, "text-anchor": "end" }, "cells, log scale"));
   svg.replaceChildren(...out);
 }
 
