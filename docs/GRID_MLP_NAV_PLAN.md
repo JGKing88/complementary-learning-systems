@@ -2288,6 +2288,7 @@ and i4_v32 (arms 1, 3, 4). Each arm is `hopfield_nav/run_idea4_agent_chain.sh`:
 | 3 | `_zr4`, width 1024 | random, trained by PPO | from scratch | 29956992 to 29957009 |
 | 4 | `_zf4`, width 2048 | frozen memory as start, trained by PPO | from scratch | 29957010 to 29957025 |
 | 5 | `_zf4`, I3_STAGE1 = idea 1 u3800 | frozen memory as start, trained by PPO | idea 1's, fine-tuned | 29962984 to 29963010 |
+| 5b | as 5, memory lr x 0.1 | as 5 | idea 1's, fine-tuned | 29968196 to 29968221 |
 
 Arm 5 was added after arm 1's first 250 updates. Arm 1 held known_reached
 at 0.55 to 0.69 over six evaluations while its steps to a known goal fell
@@ -2300,6 +2301,20 @@ MemoryNavAgent (`train_navigate.py` loads the parent's controller weights
 and keeps the constructor's memory, commit 28c477f, snapshot i4_v34).
 A 3-update smoke run moved both the memory and the controller weights by
 about 0.002.
+
+Arm 5b: arm 5 with the memory at a tenth of the PPO lr
+(`--trainable_memory_lr_scale 0.1`, the memory in its own Adam group,
+commit 72643c6, snapshot i4_v35), jobs 29968196 to 29968221. In its first
+100 updates arm 5 crossed target_kl (0.1, checked per minibatch) after 3 to
+8 of PPO's 80 minibatch steps in every update. Arm 1, the same controller
+with the memory frozen, was back to all 80 steps at KL 0.01 to 0.02 by u20.
+Adam moves each of the memory's weights by about lr per step, and a
+controller that follows d passes that change straight to the policy. Arm 4,
+whose controller does not yet use d, runs 80 steps at KL 0.005. Over the
+same 100 updates arm 5's known_reached went 0.57, 0.36, 0.29 while its
+steps to a known goal went 59, 29, 15. In 5b's 3-update smoke run the first
+update took 7 steps (arm 5: 3, arm 1: 8) and the memory moved a tenth as
+far as the controller.
 
 Smoke tests passed for every path. Arms 3 and 4 run at about twice the time
 per update of the frozen arms (backpropagation through the memory), so they
