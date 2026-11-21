@@ -1,4 +1,10 @@
-"""Ratio grids from the report rendered as heat maps (field width over grid spacing)."""
+"""Ratio grids from the report rendered as heat maps (width over grid spacing).
+
+Two kinds of grid exist, told apart by the first header cell: "Recording (field width)" divides a
+place-field width by a module's spacing, and "Recording (kernel full width at 0.5)" divides the full
+width at which population-vector correlation falls to 0.5. A trailing "Studies" column, if present,
+is not drawn as a cell; it feeds the tooltip.
+"""
 import html
 import math
 import re
@@ -7,6 +13,41 @@ import heatcolor as hc
 
 LEVELS = ("Dorsal", "Intermediate", "Ventral")
 NUM = r"(\d+(?:\.\d+)?)"
+KINDS = {
+    "field": {
+        "title_id": "hm-title",
+        "title": "Place-field width against grid spacing",
+        "corner": "field width",
+        "ends": ("Field narrower than the grid spacing", "Field wider"),
+        "sub": ("Each cell divides a hippocampal place-field width by one entorhinal grid module's "
+                "spacing, as a range from the narrowest field over the widest spacing to the widest "
+                "field over the narrowest spacing. Each row pools every audited width for one region, "
+                "long-axis level and environment class, and names how many studies it holds; hover "
+                "or focus a cell to list them. Colour is the range's geometric midpoint on a log "
+                "scale and saturates beyond 0.1 and 10. Rows run from dorsal to ventral. Fields grow "
+                "with the environment and grids barely change, so compare levels only within one "
+                "environment class."),
+        "link": "Sources, field rules and limits",
+    },
+    "kernel": {
+        "title_id": "hm-kernel-title",
+        "title": "Population similarity width against grid spacing",
+        "corner": "kernel full width at r = 0.5",
+        "ends": ("Kernel narrower than the grid spacing", "Kernel wider"),
+        "sub": ("Each cell divides the full width at which hippocampal population-vector "
+                "correlation falls to 0.5, both sides of a position, by one grid module's spacing. "
+                "Each row is one study, region, level and condition. The colour scale is the same "
+                "as above. No study measured a hippocampal kernel and grid spacing in the same "
+                "animals, so every cell pairs different animals, and species without a measured "
+                "grid spacing are left out."),
+        "link": "Sources, measures and limits",
+    },
+}
+
+
+def kind_of(header_cell):
+    """'Recording (field width)' -> 'field'; 'Recording (kernel full width at 0.5)' -> 'kernel'."""
+    return "kernel" if "kernel" in header_cell else "field"
 
 
 def split_range(text):
@@ -27,15 +68,25 @@ def split_label(text):
 def parse(lines, species):
     rows = [[c.strip() for c in ln.strip().strip("|").split("|")] for ln in lines]
     head, body = rows[0], rows[2:]
-    cols = [split_label(h) for h in head[1:]]
+    has_studies = head[-1] == "Studies"
+    ncol = len(head) - 1 - has_studies
+    cols = [split_label(h) for h in head[1:1 + ncol]]
     out = []
     for r in body:
         label, width = split_label(r[0])
         cells = []
-        for (clab, cspan), c in zip(cols, r[1:]):
+        for (clab, cspan), c in zip(cols, r[1:1 + ncol]):
             cells.append({"text": c, "range": split_range(c), "col": clab, "col_span": cspan})
-        out.append({"label": label, "width": width, "cells": cells})
-    return {"species": species, "cols": cols, "rows": out}
+        studies = [s.strip() for s in r[-1].split(";") if s.strip()] if has_studies else []
+        out.append({"label": label, "width": width, "cells": cells, "studies": studies})
+    return {"species": species, "kind": kind_of(head[0]), "cols": cols, "rows": out}
+
+
+def _studies_text(studies):
+    if not studies:
+        return ""
+    n = len(studies)
+    return f"{n} {'study' if n == 1 else 'studies'}: " + "; ".join(studies)
 
 
 def _cell(row, cell):
@@ -52,13 +103,16 @@ def _cell(row, cell):
     attrs = (f'data-r="{e(cell["text"])}" data-m="{e(mid_s)}" '
              f'data-row="{e(row["label"])}: {e(row["width"])}" '
              f'data-col="{e(cell["col"])}: {e(cell["col_span"])}"')
+    if row["studies"] and not all(st in row["label"] for st in row["studies"]):
+        attrs += f' data-s="{e(_studies_text(row["studies"]))}"'
     return f'<td class="v" tabindex="0" style="{style}" {attrs}>{e(cell["text"])}</td>'
 
 
 def table_html(grid):
     e = html.escape
     ncol = len(grid["cols"]) + 1
-    head = ['<th class="hm-corner" scope="col">Hippocampal recording<span>field width</span></th>']
+    corner = KINDS[grid["kind"]]["corner"]
+    head = [f'<th class="hm-corner" scope="col">Hippocampal recording<span>{e(corner)}</span></th>']
     for lab, sp in grid["cols"]:
         head.append(f'<th scope="col">{e(lab)}<span>{e(sp)}</span></th>')
     body, level = [], None
@@ -79,7 +133,7 @@ def table_html(grid):
             f'<tbody>{"".join(body)}</tbody></table></div></figure>')
 
 
-def legend_html():
+def legend_html(ends):
     stops = {}
     for mode in ("light", "dark"):
         xs = [i / 20 for i in range(21)]
@@ -92,23 +146,29 @@ def legend_html():
     return (f'<div class="hm-legend" style="--gl:{stops["light"]};--gd:{stops["dark"]}">'
             '<div class="hm-scale"><div class="hm-bar" aria-hidden="true"></div>'
             f'<div class="hm-ticks" aria-hidden="true">{ticks}</div>'
-            '<div class="hm-ends"><span>Field narrower than the grid spacing</span>'
-            '<span>Field wider</span></div></div>'
+            f'<div class="hm-ends"><span>{html.escape(ends[0])}</span>'
+            f'<span>{html.escape(ends[1])}</span></div></div>'
             '<div class="hm-nckey"><i aria-hidden="true"></i>Not comparable</div></div>')
 
 
-def block_html(grids, sources_href):
+def group_html(kind, grids, sources_href):
+    k = KINDS[kind]
+    figs = "".join(table_html(g) for g in grids)
+    return (f'<div class="hm-group-block"><h2 id="{k["title_id"]}">{html.escape(k["title"])}</h2>'
+            f'<p class="hm-sub">{html.escape(k["sub"])} '
+            f'<a href="#{sources_href}">{html.escape(k["link"])}</a>.</p>'
+            + legend_html(k["ends"]) + f'<div class="hm-figs">{figs}</div></div>')
+
+
+def block_html(grids, sources):
+    """grids: parsed grids in page order; sources: {kind: id of the section that holds them}."""
     if not grids:
         return ""
-    figs = "".join(table_html(g) for g in grids)
-    return (
-        '<section class="hm-block" aria-labelledby="hm-title">'
-        '<h2 id="hm-title">Place-field width against grid spacing</h2>'
-        '<p class="hm-sub">Each cell divides a hippocampal place-field width by one entorhinal grid '
-        "module's spacing, as a range from the narrowest field over the widest spacing to the widest "
-        "field over the narrowest spacing. Colour is the range's geometric midpoint on a log scale "
-        "and saturates beyond 0.1 and 10. Rows run from dorsal to ventral and name their environment. "
-        "Fields grow with the environment and grids barely change, so compare levels only within "
-        f'one environment. <a href="#{sources_href}">Sources, field rules and limits</a>.</p>'
-        + legend_html() + f'<div class="hm-figs">{figs}</div>'
-        '<div class="hm-tip" role="tooltip" hidden></div></section>')
+    parts, kinds = [], []
+    for kind in ("field", "kernel"):
+        mine = [g for g in grids if g["kind"] == kind]
+        if mine:
+            parts.append(group_html(kind, mine, sources[kind]))
+            kinds.append(kind)
+    return (f'<section class="hm-block" aria-labelledby="{KINDS[kinds[0]]["title_id"]}">' + "".join(parts)
+            + '<div class="hm-tip" role="tooltip" hidden></div></section>')

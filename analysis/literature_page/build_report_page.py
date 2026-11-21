@@ -92,7 +92,7 @@ def render(md):
     lines = md.split("\n")
     title, blocks, toc, para, i = "", [], [], [], 0
     used = set()
-    grids, cur_h3, cur_sid, grid_sid = [], "", "", ""
+    grids, cur_h3, cur_sid, grid_sids = [], "", "", {}
 
     def unique_id(text):
         """Heading ids must be unique; region headings such as CA3 repeat across sections."""
@@ -122,12 +122,15 @@ def render(md):
             while i < len(lines) and lines[i].startswith("|"):
                 tl.append(lines[i])
                 i += 1
-            if tl[0].strip().startswith("| Recording (field width) |"):
-                # A field-width / grid-spacing grid: drawn as a heat map at the top of the page.
-                grids.append(heatmap.parse(tl, cur_h3))
-                grid_sid = cur_sid
-                blocks.append(f'<p class="hm-pointer">The {html.escape(cur_h3.lower())} grid is drawn as a '
-                              'heat map at the <a href="#hm-title">top of the page</a>.</p>')
+            if tl[0].strip().startswith("| Recording ("):
+                # A width / grid-spacing grid: drawn as a heat map at the top of the page.
+                grid = heatmap.parse(tl, cur_h3)
+                grids.append(grid)
+                grid_sids.setdefault(grid["kind"], cur_sid)
+                title_id = heatmap.KINDS[grid["kind"]]["title_id"]
+                what = cur_h3.lower() + (" kernel" if grid["kind"] == "kernel" else "")
+                blocks.append(f'<p class="hm-pointer">The {html.escape(what)} grid is drawn as a '
+                              f'heat map at the <a href="#{title_id}">top of the page</a>.</p>')
             else:
                 blocks.append(table(tl))
             continue
@@ -152,13 +155,13 @@ def render(md):
             para.append(ln)
         i += 1
     flush()
-    return title, blocks, toc, grids, grid_sid
+    return title, blocks, toc, grids, grid_sids
 
 
 def main():
     src, out = sys.argv[1], sys.argv[2]
-    title, blocks, toc, grids, grid_sid = render(open(src, encoding="utf-8").read())
-    heat = heatmap.block_html(grids, grid_sid)
+    title, blocks, toc, grids, grid_sids = render(open(src, encoding="utf-8").read())
+    heat = heatmap.block_html(grids, grid_sids)
     # The report's first two paragraphs are the overall summary and the tag key.
     first_sec = next(k for k, b in enumerate(blocks) if b.startswith("</section>"))
     summary, legend_p = blocks[0], blocks[1]
@@ -265,7 +268,9 @@ footer {{ font: 13px/1.5 var(--sans); color: var(--muted); border-top: 1px solid
 
 /* Heat maps: field width over grid spacing. Cell colours are computed per mode (--bl/--tl light,
    --bd/--td dark) from a diverging blue / grey / red scale on log10(ratio), centred on 1. */
-.hm-block {{ display: grid; gap: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px 20px 18px; }}
+.hm-block {{ display: grid; gap: 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px 20px 18px; }}
+.hm-group-block {{ display: grid; gap: 14px; }}
+.hm-group-block + .hm-group-block {{ border-top: 1px solid var(--line); padding-top: 24px; }}
 .hm-block h2 {{ margin: 0; }}
 .hm-sub {{ font: 14.5px/1.55 var(--sans); color: var(--muted); max-width: 88ch; }}
 .hm-legend {{ display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: flex-end; font: 12px/1.3 var(--sans); color: var(--muted); }}
@@ -304,7 +309,7 @@ table.hm td.nc span {{ background: var(--surface); padding: 0 3px; border-radius
 }}
 :root[data-theme="dark"] table.hm td.v {{ background: var(--bd); color: var(--td); }}
 :root[data-theme="dark"] .hm-bar {{ background: var(--gd); }}
-.hm-tip {{ position: fixed; z-index: 10; pointer-events: none; max-width: 300px; display: grid; gap: 2px;
+.hm-tip {{ position: fixed; z-index: 10; pointer-events: none; max-width: 340px; display: grid; gap: 2px;
   background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 8px;
   box-shadow: 0 6px 20px rgba(0,0,0,0.14); padding: 9px 11px; font: 12.5px/1.4 var(--sans); }}
 .hm-tip strong {{ color: var(--ink); font-size: 15px; font-variant-numeric: tabular-nums; }}
@@ -334,8 +339,8 @@ p.hm-pointer {{ font: 14px/1.5 var(--sans); color: var(--muted); }}
       </div>
       <div class="answer">
         <div class="q">Does population similarity fall off across a large part of an environment?</div>
-        <div class="a">Yes in one study, in ventral CA3</div>
-        <p>On an 18 m track, ventral CA3 population-vector correlation fell to 0.5 about 3.3 m from a position and reached zero near 10.5 m, about 64% of the 16.5 m analysed; intermediate CA3 reached zero near 7 m. The vectors pool cells across rats, and no one has replicated it. Every dorsal curve, including dorsal CA3 on the same track, reaches baseline within about one field width.</p>
+        <div class="a">Smoothly in one study, in ventral rat CA3; anterior marmoset hippocampus shows one block per track arm</div>
+        <p>On an 18 m track, ventral CA3 population-vector correlation fell to 0.5 about 3.3 m from a position and reached zero near 10.5 m, about 64% of the 16.5 m analysed; intermediate CA3 reached zero near 7 m. The vectors pool cells across rats, and no one has replicated it. In anterior marmoset hippocampus on a 4.26 m L-shaped track, correlation fell to 0.5 about 1.2 to 1.3 m away and stayed near +0.3 beyond, but the high values form one block per arm, bounded by the corner; the vectors pool units across sessions and the values are read from a figure. Every dorsal rodent curve with a field width from the same study falls to half within about one field width, including dorsal CA3 on the 18 m track.</p>
         <a class="more" href="#{q2}">The evidence</a>
       </div>
     </div>
@@ -344,7 +349,7 @@ p.hm-pointer {{ font: 14px/1.5 var(--sans); color: var(--muted); }}
 
     {body}
 
-    <footer>Compiled on 15 November 2026 from eleven sets of research notes covering primary papers, supplements, abstracts and dataset landing pages, then updated from full texts: Kjelstrup 2008 and its supplement, Brun 2008, Jung, Wiener &amp; McNaughton 1994, Terrazas 2005, Muller &amp; Kubie 1987, O'Keefe &amp; Burgess 1996, Sharp &amp; Green 1994, Olson 2017, Lever 2009, Mainali 2025 and a Maurer &amp; Nadel review. The field-width over grid-spacing tables were added on 20 November 2026 from four further sets of notes and an independent audit. Each chip says how a value was checked: full text, abstract only, a secondary source, unverified, a preprint, read off a figure, or arithmetic derived from reported numbers. A markdown copy of this report is kept in the repository.</footer>
+    <footer>Compiled on 15 November 2026 from eleven sets of research notes covering primary papers, supplements, abstracts and dataset landing pages, then updated from full texts: Kjelstrup 2008 and its supplement, Brun 2008, Jung, Wiener &amp; McNaughton 1994, Terrazas 2005, Muller &amp; Kubie 1987, O'Keefe &amp; Burgess 1996, Sharp &amp; Green 1994, Olson 2017, Lever 2009, Mainali 2025 and a Maurer &amp; Nadel review. The field-width over grid-spacing tables were added on 20 November 2026 from four further sets of notes and an independent audit. On 21 November 2026 three audited sweeps of rat and mouse field widths, field counts and population kernels replaced the per-study grid rows with pooled rows and added the kernel grids and the fields-per-period table. Each chip says how a value was checked: full text, abstract only, a secondary source, unverified, a preprint, read off a figure, or arithmetic derived from reported numbers. A markdown copy of this report is kept in the repository.</footer>
   </main>
 </div>
 
@@ -367,13 +372,15 @@ p.hm-pointer {{ font: 14px/1.5 var(--sans); color: var(--muted); }}
   heads.forEach(h => io.observe(h));
 }})();
 (() => {{
-  // Heat-map tooltip: value first, then the midpoint, the row and the column.
+  // Heat-map tooltip: value first, then the midpoint, the row, the column and the row's studies.
   const tip = document.querySelector(".hm-tip");
   if (!tip) return;
   const line = (text, tag) => {{ const el = document.createElement(tag || "span"); el.textContent = text; return el; }};
   const show = td => {{
-    tip.replaceChildren(line(td.dataset.r, "strong"), line("Geometric midpoint " + td.dataset.m),
-                        line(td.dataset.row), line("over " + td.dataset.col));
+    const parts = [line(td.dataset.r, "strong"), line("Geometric midpoint " + td.dataset.m),
+                   line(td.dataset.row), line("over " + td.dataset.col)];
+    if (td.dataset.s) parts.push(line(td.dataset.s));
+    tip.replaceChildren(...parts);
     tip.hidden = false;
     const r = td.getBoundingClientRect(), t = tip.getBoundingClientRect();
     let x = r.left + r.width / 2 - t.width / 2, y = r.top - t.height - 8;

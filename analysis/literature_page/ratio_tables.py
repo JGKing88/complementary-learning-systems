@@ -1,10 +1,15 @@
-"""Field-width / grid-spacing ratio tables: ratio_tables.py SPEC.json OUT.md
+"""Width / grid-spacing ratio tables: ratio_tables.py SPEC.json OUT.md
 
-SPEC.json holds one entry per species:
-{"rat": {"columns": [{"label": "M1", "lo_cm": 38, "hi_cm": 50}, ...],
-         "rows": [{"label": "Dorsal CA1, 1.7 m track", "lo_cm": 42, "hi_cm": 52}, ...]}}
+SPEC.json holds one entry per grid:
+{"Rat": {"columns": [{"label": "M1", "lo_cm": 38, "hi_cm": 50}, ...],
+         "rows": [{"label": "Dorsal CA1, 1.7 m track", "lo_cm": 42, "hi_cm": 52,
+                   "studies": ["Diba 2008"]}, ...]},
+ "Rat kernel": {"header": "Recording (kernel full width at 0.5)", "columns_from": "Rat", "rows": [...]}}
 A cell spans (row lo / column hi) to (row hi / column lo), so it carries the
-uncertainty of both ranges. A single value has lo == hi.
+uncertainty of both ranges. A single value has lo == hi. "header" sets the first header
+cell (default "Recording (field width)"), "columns_from" reuses another entry's columns, and
+an optional per-row "studies" list adds a final Studies column, which the page turns into
+the heat-map tooltip.
 """
 import json
 import sys
@@ -38,11 +43,12 @@ def shown(d):
     return d.get("show") or span(d["lo_cm"], d["hi_cm"])
 
 
-def table(spec):
-    cols, rows = spec["columns"], spec["rows"]
-    head = "| Recording (field width) | " + " | ".join(
-        f"{c['label']} ({shown(c)})" for c in cols) + " |"
-    lines = [head, "|---" * (len(cols) + 1) + "|"]
+def table(spec, cols):
+    rows = spec["rows"]
+    studies = any(r.get("studies") for r in rows)
+    head = f"| {spec.get('header', 'Recording (field width)')} | " + " | ".join(
+        f"{c['label']} ({shown(c)})" for c in cols) + (" | Studies" if studies else "") + " |"
+    lines = [head, "|---" * (len(cols) + 1 + studies) + "|"]
     for r in rows:
         cells = []
         for c in cols:
@@ -53,6 +59,8 @@ def table(spec):
             lo = r["lo_cm"] / c["hi_cm"]
             hi = r["hi_cm"] / c["lo_cm"]
             cells.append(fmt(lo) if fmt(lo) == fmt(hi) else f"{fmt(lo)} to {fmt(hi)}")
+        if studies:
+            cells.append("; ".join(r.get("studies", [])))
         lines.append(f"| {r['label']} ({shown(r)}) | " + " | ".join(cells) + " |")
     return "\n".join(lines)
 
@@ -60,8 +68,9 @@ def table(spec):
 def main():
     spec = json.load(open(sys.argv[1], encoding="utf-8"))
     out = []
-    for species, s in spec.items():
-        out.append(f"### {species}\n\n{table(s)}\n")
+    for name, s in spec.items():
+        cols = spec[s["columns_from"]]["columns"] if "columns_from" in s else s["columns"]
+        out.append(f"### {name}\n\n{table(s, cols)}\n")
     open(sys.argv[2], "w", encoding="utf-8").write("\n".join(out))
     print("\n".join(out))
 

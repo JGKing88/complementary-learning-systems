@@ -47,69 +47,140 @@
     ],
     "rows": [
       {
-        "label": "Dorsal CA1, T maze and 2.5 m track",
-        "lo_cm": 29,
-        "hi_cm": 75
+        "label": "Dorsal CA1, real track up to 3 m, 5 studies",
+        "lo_cm": 23.0,
+        "hi_cm": 75.0,
+        "studies": [
+          "Mizuseki 2012",
+          "Wirtshafter 2020",
+          "Lee 2025",
+          "Mou 2018",
+          "Wang 2020"
+        ]
       },
       {
-        "label": "Dorsal CA1 and CA3 pooled, 1.0 and 1.7 m tracks",
-        "lo_cm": 42,
-        "hi_cm": 52
+        "label": "Dorsal CA1, real arena up to 4 m², 8 studies",
+        "lo_cm": 21,
+        "hi_cm": 74.8,
+        "studies": [
+          "Jung 1994",
+          "Mizuseki 2012",
+          "Park 2011",
+          "Fenton 2008",
+          "Henriksen 2010",
+          "Tanni 2022",
+          "Hayman 2011",
+          "Jacob 2020"
+        ]
       },
       {
-        "label": "Dorsal CA1, familiar 68 cm box",
-        "lo_cm": 24,
-        "hi_cm": 24
+        "label": "Dorsal CA1, large real track or arena, 2 studies",
+        "lo_cm": 56,
+        "hi_cm": 177,
+        "studies": [
+          "Rich 2014",
+          "Tanni 2022"
+        ]
       },
       {
-        "label": "Dorsal CA1, arenas, largest field per cell",
-        "lo_cm": 36,
-        "hi_cm": 58
+        "label": "Dorsal CA1 and CA3 pooled, real track up to 3 m, 1 study",
+        "lo_cm": 42.0,
+        "hi_cm": 52.0,
+        "studies": [
+          "Diba 2008"
+        ]
       },
       {
-        "label": "Dorsal CA1, novel 48 m track",
-        "lo_cm": 65,
-        "hi_cm": 65
+        "label": "Dorsal CA3, real track up to 3 m, 2 studies",
+        "lo_cm": 33.8,
+        "hi_cm": 50.0,
+        "studies": [
+          "Mizuseki 2012",
+          "Wang 2020"
+        ]
       },
       {
-        "label": "Dorsal CA3, radial maze and 2.5 m track",
-        "lo_cm": 34,
-        "hi_cm": 50
+        "label": "Dorsal CA3, real arena up to 4 m², 4 studies",
+        "lo_cm": 16.2,
+        "hi_cm": 42.2,
+        "studies": [
+          "Kjelstrup 2008",
+          "Mizuseki 2012",
+          "Park 2011",
+          "Komorowski 2013"
+        ]
       },
       {
-        "label": "Dorsal CA3, 1 m box",
-        "lo_cm": 28,
-        "hi_cm": 28
+        "label": "Dorsal CA3, large real 18 m track, 1 study",
+        "lo_cm": 98.0,
+        "hi_cm": 112.0,
+        "studies": [
+          "Kjelstrup 2008"
+        ]
       },
       {
-        "label": "Dorsal CA3, arenas, largest field per cell, one rat",
-        "lo_cm": 32,
-        "hi_cm": 42
+        "label": "Dorsal dentate granule cells, real arena up to 4 m², 1 study",
+        "lo_cm": 21.9,
+        "hi_cm": 30.6,
+        "studies": [
+          "Diamantaki 2016"
+        ]
       },
       {
-        "label": "Dorsal CA3, cells at 7 to 19% of the long axis, 18 m track",
-        "lo_cm": 98,
-        "hi_cm": 112
+        "label": "Intermediate CA1, real track up to 3 m, 1 study",
+        "lo_cm": 37.0,
+        "hi_cm": 37.0,
+        "studies": [
+          "Lee 2025"
+        ]
       },
       {
-        "label": "Intermediate CA1, about 65% of the axis, familiar 68 cm box",
-        "lo_cm": 49,
-        "hi_cm": 49
+        "label": "Intermediate CA1, real arena up to 4 m², 1 study",
+        "lo_cm": 48.8,
+        "hi_cm": 48.8,
+        "studies": [
+          "Jung 1994"
+        ]
       },
       {
-        "label": "Intermediate CA1, 1.3 m track, from field area",
-        "lo_cm": 37,
-        "hi_cm": 37
+        "label": "Intermediate CA1, large real track over 3 m, 1 study",
+        "lo_cm": 55.0,
+        "hi_cm": 80.0,
+        "studies": [
+          "Burke 2011"
+        ]
       },
       {
-        "label": "Intermediate CA3, cells at 55 to 70%, 18 m track",
-        "lo_cm": 307,
-        "hi_cm": 373
+        "label": "Intermediate CA3, real arena up to 4 m², 1 study",
+        "lo_cm": 24.0,
+        "hi_cm": 25.2,
+        "studies": [
+          "Komorowski 2013"
+        ]
       },
       {
-        "label": "Ventral CA3, cells at 71 to 87%, 18 m track",
-        "lo_cm": 410,
-        "hi_cm": 552
+        "label": "Intermediate CA3, large real 18 m track, 1 study",
+        "lo_cm": 307.0,
+        "hi_cm": 373.0,
+        "studies": [
+          "Kjelstrup 2008"
+        ]
+      },
+      {
+        "label": "Ventral CA3, real arena up to 4 m², 1 study",
+        "lo_cm": 24.0,
+        "hi_cm": 25.4,
+        "studies": [
+          "Komorowski 2013"
+        ]
+      },
+      {
+        "label": "Ventral CA3, large real 18 m track, 1 study",
+        "lo_cm": 410.0,
+        "hi_cm": 552.0,
+        "studies": [
+          "Kjelstrup 2008"
+        ]
       }
     ]
   },
@@ -133,45 +204,314 @@
     ],
     "rows": [
       {
-        "label": "Dorsal CA1, tetrodes, real arenas",
-        "lo_cm": 19.7,
-        "hi_cm": 28
+        "label": "Dorsal CA1, real environment up to 2 m, 18 studies",
+        "lo_cm": 14.8,
+        "hi_cm": 42.5,
+        "studies": [
+          "Abad-Perez 2025",
+          "Arbab 2018",
+          "Boublil 2026",
+          "Chen 2018",
+          "Dragoi 2013",
+          "Geiller 2022",
+          "Go 2021",
+          "Gu 2023",
+          "Hussaini 2011",
+          "Indersmitten 2019",
+          "Jarzebowski 2022",
+          "Keinath 2014",
+          "Lenkey 2025",
+          "Mao 2017",
+          "Mou 2018",
+          "Sloin 2022",
+          "Zhao 2014",
+          "Ziv 2013"
+        ]
       },
       {
-        "label": "Dorsal CA1, one-photon imaging, 84 cm track and 120 cm maze",
-        "lo_cm": 22.1,
-        "hi_cm": 24
+        "label": "Dorsal CA1, virtual track up to 3 m, 7 studies",
+        "lo_cm": 37.0,
+        "hi_cm": 60.0,
+        "studies": [
+          "Bourboulou 2019",
+          "Curreli 2022",
+          "Dombeck 2010",
+          "Dong 2021",
+          "Harvey 2009",
+          "Krishnan 2022",
+          "Radvansky 2018"
+        ]
       },
       {
-        "label": "Dorsal CA1, electrodes, 1.8 m virtual track",
-        "lo_cm": 41,
-        "hi_cm": 43
+        "label": "Dorsal CA1, large virtual track over 3 m, 3 studies",
+        "lo_cm": 45.0,
+        "hi_cm": 46.4,
+        "studies": [
+          "Hainmueller 2018",
+          "Lee 2020",
+          "Sumegi 2025"
+        ]
       },
       {
-        "label": "Dorsal CA1, two-photon imaging, 1.8 to 4 m virtual tracks",
-        "lo_cm": 38,
-        "hi_cm": 50
+        "label": "Dorsal CA1 and CA3 pooled, real environment up to 2 m, 1 study",
+        "lo_cm": 23.1,
+        "hi_cm": 23.1,
+        "studies": [
+          "Quigley 2023"
+        ]
       },
       {
-        "label": "Dorsal CA3, tetrodes, 50 cm box and 100 cm track",
-        "lo_cm": 27.0,
-        "hi_cm": 27.4,
-        "show": "27.0 to 27.4 cm"
+        "label": "Dorsal CA3, real environment up to 2 m, 2 studies",
+        "lo_cm": 17.7,
+        "hi_cm": 27.0,
+        "studies": [
+          "Boublil 2026",
+          "Hussaini 2011"
+        ]
       },
       {
-        "label": "Dorsal CA2/3 and CA3a, two-photon imaging, 3 to 4 m virtual tracks",
-        "lo_cm": 40,
-        "hi_cm": 44
+        "label": "Dorsal CA3, virtual track up to 3 m, 1 study",
+        "lo_cm": 44.0,
+        "hi_cm": 44.0,
+        "studies": [
+          "Dong 2021"
+        ]
       },
       {
-        "label": "Intermediate CA1, one-photon imaging, 1.2 m maze",
+        "label": "Dorsal CA2/3, large virtual track over 3 m, 1 study",
+        "lo_cm": 40.0,
+        "hi_cm": 40.0,
+        "studies": [
+          "Hainmueller 2018"
+        ]
+      },
+      {
+        "label": "Dorsal dentate gyrus, real environment up to 2 m, 1 study",
+        "lo_cm": 16.9,
+        "hi_cm": 16.9,
+        "studies": [
+          "Boublil 2026"
+        ]
+      },
+      {
+        "label": "Dorsal dentate granule cells, real environment up to 2 m, 1 study",
+        "lo_cm": 20.0,
+        "hi_cm": 21.5,
+        "studies": [
+          "Kim 2023"
+        ]
+      },
+      {
+        "label": "Dorsal dentate granule cells, large virtual track over 3 m, 1 study",
+        "lo_cm": 65.0,
+        "hi_cm": 65.0,
+        "studies": [
+          "Hainmueller 2018"
+        ]
+      },
+      {
+        "label": "Dorsal mossy cells, real environment up to 2 m, 1 study",
+        "lo_cm": 18.3,
+        "hi_cm": 19.7,
+        "studies": [
+          "Kim 2023"
+        ]
+      },
+      {
+        "label": "Dorsal subiculum, real environment up to 2 m, 1 study",
+        "lo_cm": 30.9,
+        "hi_cm": 43.3,
+        "studies": [
+          "Abad-Perez 2025"
+        ]
+      },
+      {
+        "label": "Intermediate CA1, real environment up to 2 m, 1 study",
         "lo_cm": 27.2,
-        "hi_cm": 34.4
+        "hi_cm": 27.2,
+        "studies": [
+          "Jarzebowski 2022"
+        ]
       },
       {
-        "label": "Ventral CA1, tetrodes, novel 70 cm cylinder",
+        "label": "Ventral CA1, real environment up to 2 m, 1 study",
         "lo_cm": 29.3,
-        "hi_cm": 41.9
+        "hi_cm": 33.1,
+        "studies": [
+          "Keinath 2014"
+        ]
+      }
+    ]
+  },
+  "Rat kernel": {
+    "header": "Recording (kernel full width at 0.5)",
+    "columns_from": "Rat",
+    "rows": [
+      {
+        "label": "Dorsal CA1, Green 2022, control trials, 1.8 m track",
+        "lo_cm": 33.4,
+        "hi_cm": 35.2,
+        "studies": [
+          "Green 2022"
+        ]
+      },
+      {
+        "label": "Dorsal CA1, Green 2022, jump trials, 1.8 m track",
+        "lo_cm": 38.4,
+        "hi_cm": 39.0,
+        "studies": [
+          "Green 2022"
+        ]
+      },
+      {
+        "label": "Dorsal CA1, Wang 2020, 2.07 m circular track",
+        "lo_cm": 28.0,
+        "hi_cm": 28.4,
+        "studies": [
+          "Wang 2020"
+        ]
+      },
+      {
+        "label": "Dorsal CA1, Terrazas 2005, walking, 4.08 m ring, dot product",
+        "lo_cm": 54,
+        "hi_cm": 54,
+        "studies": [
+          "Terrazas 2005"
+        ]
+      },
+      {
+        "label": "Dorsal CA1, Ledergerber 2021, open field, 1.5 m box",
+        "lo_cm": 44,
+        "hi_cm": 45,
+        "studies": [
+          "Ledergerber 2021"
+        ]
+      },
+      {
+        "label": "Dorsal CA1, Ledergerber 2021, memory task, 1.5 m box",
+        "lo_cm": 44,
+        "hi_cm": 44.4,
+        "studies": [
+          "Ledergerber 2021"
+        ]
+      },
+      {
+        "label": "Dorsal CA1, Gothard 2001, light, 1.76 m track",
+        "lo_cm": 27.4,
+        "hi_cm": 30,
+        "studies": [
+          "Gothard 2001"
+        ]
+      },
+      {
+        "label": "Dorsal CA1, Gothard 2001, darkness, 1.76 m track",
+        "lo_cm": 23.8,
+        "hi_cm": 25.8,
+        "studies": [
+          "Gothard 2001"
+        ]
+      },
+      {
+        "label": "Dorsal CA1, Farooq 2024, juvenile, first exposure, 1 m track",
+        "lo_cm": 29,
+        "hi_cm": 31,
+        "studies": [
+          "Farooq 2024"
+        ]
+      },
+      {
+        "label": "Dorsal CA3, Kjelstrup 2008, 18 m track",
+        "lo_cm": 81,
+        "hi_cm": 81,
+        "studies": [
+          "Kjelstrup 2008"
+        ]
+      },
+      {
+        "label": "Dorsal CA3, Green 2022, jump trials, 1.8 m track",
+        "lo_cm": 35.6,
+        "hi_cm": 36.8,
+        "studies": [
+          "Green 2022"
+        ]
+      },
+      {
+        "label": "Dorsal CA3, Wang 2020, 2.07 m circular track",
+        "lo_cm": 39.6,
+        "hi_cm": 40,
+        "studies": [
+          "Wang 2020"
+        ]
+      },
+      {
+        "label": "Dorsal dentate gyrus, Gothard 2001, light, 1.76 m track",
+        "lo_cm": 28,
+        "hi_cm": 30,
+        "studies": [
+          "Gothard 2001"
+        ]
+      },
+      {
+        "label": "Dorsal dentate gyrus, Gothard 2001, darkness, 1.76 m track",
+        "lo_cm": 16.8,
+        "hi_cm": 18,
+        "studies": [
+          "Gothard 2001"
+        ]
+      },
+      {
+        "label": "Dorsal subiculum, Ledergerber 2021, open field, 1.5 m box",
+        "lo_cm": 37.2,
+        "hi_cm": 38,
+        "studies": [
+          "Ledergerber 2021"
+        ]
+      },
+      {
+        "label": "Dorsal subiculum, Ledergerber 2021, memory task, 1.5 m box",
+        "lo_cm": 38.4,
+        "hi_cm": 39,
+        "studies": [
+          "Ledergerber 2021"
+        ]
+      },
+      {
+        "label": "Intermediate CA3, Kjelstrup 2008, 18 m track",
+        "lo_cm": 371,
+        "hi_cm": 371,
+        "studies": [
+          "Kjelstrup 2008"
+        ]
+      },
+      {
+        "label": "Ventral CA3, Kjelstrup 2008, 18 m track",
+        "lo_cm": 666,
+        "hi_cm": 666,
+        "studies": [
+          "Kjelstrup 2008"
+        ]
+      }
+    ]
+  },
+  "Mouse kernel": {
+    "header": "Recording (kernel full width at 0.5)",
+    "columns_from": "Mouse",
+    "rows": [
+      {
+        "label": "Dorsal CA1, Resnik 2012, 1.4 m track",
+        "lo_cm": 18,
+        "hi_cm": 18,
+        "studies": [
+          "Resnik 2012"
+        ]
+      },
+      {
+        "label": "Dorsal CA1, Raveau 2018, 1.7 m track, Spearman",
+        "lo_cm": 26.4,
+        "hi_cm": 27,
+        "studies": [
+          "Raveau 2018"
+        ]
       }
     ]
   }
