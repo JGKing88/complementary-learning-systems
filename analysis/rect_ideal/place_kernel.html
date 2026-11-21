@@ -1,0 +1,674 @@
+<title>Place Population Kernel</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: controls on the left; the similarity kernel (2D map and distance profile) on top, the cells' maps below. */
+:root {
+  --bg: #f2f4f7; --surface: #ffffff; --surface-2: #e7ebf0; --fg: #151b24; --muted: #5a6475; --line: #d6dbe3;
+  --ink: #1d2533; --ink-fg: #ffffff; --accent: #2a78d6; --expect: #8a93a3; --ring: #c77c00;
+  --ok: #136038; --ok-bg: #dcf0e4; --bad: #9f2219; --bad-bg: #f9e0dc;
+  --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1217; --surface: #161b22; --surface-2: #1f262f; --fg: #e4e8ee; --muted: #98a2b1; --line: #2a313b;
+    --ink: #e4e8ee; --ink-fg: #10151c; --accent: #6da7ec; --expect: #7c8594; --ring: #f0b54a;
+    --ok: #86d9a9; --ok-bg: #123020; --bad: #ff9d92; --bad-bg: #3b1b17; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1217; --surface: #161b22; --surface-2: #1f262f; --fg: #e4e8ee; --muted: #98a2b1; --line: #2a313b;
+  --ink: #e4e8ee; --ink-fg: #10151c; --accent: #6da7ec; --expect: #7c8594; --ring: #f0b54a;
+  --ok: #86d9a9; --ok-bg: #123020; --bad: #ff9d92; --bad-bg: #3b1b17; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font); }
+.app {
+  max-width: 1500px; margin: 0 auto; display: grid; gap: 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 18px 36px;
+}
+h1 { font-size: 1.35rem; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+p { margin: 0; }
+.top { display: grid; gap: 4px; }
+.top .sub { color: var(--muted); max-width: 90ch; }
+.layout { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 900px) { .layout { grid-template-columns: 290px minmax(0, 1fr); } }
+.rail, .main { display: grid; gap: 14px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 10px; min-width: 0; }
+.ptitle { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 500; }
+.ctl { display: grid; gap: 3px; }
+.ctl .head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.86rem; }
+.ctl .head output { font-family: var(--mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+input[type="number"] { font: inherit; font-family: var(--mono); font-size: 0.84rem; width: 8ch; padding: 3px 6px; border-radius: 5px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
+.hint { font-size: 0.76rem; color: var(--muted); }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+button.plain { font: inherit; font-size: 0.84rem; padding: 4px 10px; border-radius: 5px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
+button.plain:disabled { opacity: 0.45; cursor: not-allowed; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.seg button { font: inherit; font-size: 0.84rem; text-align: left; padding: 6px 8px; border-radius: 5px; cursor: pointer; background: var(--surface-2); color: var(--fg); border: 1px solid transparent; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--ink-fg); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+dl.stats { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 0.84rem; }
+dl.stats dt { color: var(--muted); }
+dl.stats dd { margin: 0; font-family: var(--mono); font-size: 0.8rem; text-align: right; font-variant-numeric: tabular-nums; }
+.kgrid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1100px) { .kgrid { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); } }
+figure { margin: 0; display: grid; gap: 6px; min-width: 0; }
+figcaption { font-size: 0.78rem; color: var(--muted); }
+svg.plot { width: 100%; height: auto; display: block; }
+svg.plot text { fill: var(--muted); font: 11px var(--mono); }
+svg.plot .ttl { font-family: var(--font); font-size: 11.5px; }
+svg.plot .grid { stroke: var(--line); stroke-width: 1; }
+svg.plot .axis { stroke: var(--muted); stroke-width: 1; }
+svg.plot .meas { fill: none; stroke: var(--accent); stroke-width: 2; }
+svg.plot .expd { fill: none; stroke: var(--expect); stroke-width: 2; stroke-dasharray: 5 4; }
+svg.plot .mark { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 2 3; }
+svg.plot .hover { stroke: var(--muted); stroke-width: 1; }
+svg.plot .bar { fill: var(--accent); }
+svg.plot .ring { fill: none; stroke: var(--ring); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.readout { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); min-height: 1.2em; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.78rem; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 18px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid var(--accent); }
+.legend span.e::before { border-top: 2px dashed var(--expect); }
+.cells { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1100px) { .cells { grid-template-columns: 300px minmax(0, 1fr); } }
+.big { display: grid; gap: 6px; }
+.mapwrap { position: relative; width: 100%; aspect-ratio: 1; max-width: 100%; }
+.mapwrap canvas, .mapwrap svg { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 4px; }
+.mapwrap canvas { image-rendering: pixelated; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.tile { font: inherit; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; text-align: left; display: grid; gap: 3px; min-width: 0; }
+.tile canvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 3px; image-rendering: pixelated; outline: 1px solid var(--line); outline-offset: -1px; }
+.tile.sel canvas { outline: 3px solid var(--ring); outline-offset: 1px; }
+.tile .cap { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pager { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.82rem; }
+#status { font-size: 0.8rem; color: var(--muted); min-height: 1.2em; font-variant-numeric: tabular-nums; }
+#status.err { color: var(--bad); }
+.chip { display: inline-block; font-size: 0.74rem; font-family: var(--mono); padding: 1px 7px; border-radius: 4px; }
+.chip.ok { color: var(--ok); background: var(--ok-bg); }
+.chip.bad { color: var(--bad); background: var(--bad-bg); }
+footer { font-size: 0.8rem; color: var(--muted); display: grid; gap: 4px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <div class="top">
+    <h1>Place-cell populations</h1>
+    <p class="sub">Build a population from random place fields and watch its similarity kernel. Space is a 128 × 128-cell square whose edges wrap, so every place has the same surroundings.</p>
+  </div>
+
+  <div class="layout">
+    <aside class="rail" aria-label="Population settings">
+      <section class="panel" aria-labelledby="t-pop">
+        <div class="ptitle" id="t-pop">Population</div>
+        <div class="ctl">
+          <div class="head"><label for="s-d">Cells</label><output id="o-d"></output></div>
+          <input type="range" id="s-d" min="0" max="1000" step="1">
+        </div>
+        <div class="ctl">
+          <div class="head"><label for="s-w">Field width, median</label><output id="o-w"></output></div>
+          <input type="range" id="s-w" min="0" max="1000" step="1">
+        </div>
+        <div class="ctl">
+          <div class="head"><label for="s-s">Field width, spread</label><output id="o-s"></output></div>
+          <input type="range" id="s-s" min="0" max="100" step="1">
+        </div>
+        <svg class="plot" id="whist" viewBox="0 0 260 92" role="img" aria-label="Histogram of the field widths drawn"></svg>
+        <div class="ctl">
+          <div class="head"><label for="s-n">Fields per cell, per 100 × 100 cells</label><output id="o-n"></output></div>
+          <input type="range" id="s-n" min="0" max="1000" step="1">
+          <p class="hint" id="h-n"></p>
+        </div>
+        <div class="row">
+          <label for="seed" class="hint">Random seed</label><input type="number" id="seed" min="1" max="999999" step="1" value="1">
+          <button class="plain" id="reseed" type="button">New draw</button>
+        </div>
+        <p class="hint">Each field is a Gaussian bump with peak 1 at a random place; width is its full width at half maximum, drawn from a log-normal (spread is the standard deviation of log width). Each cell's number of fields is Poisson. Changing one setting keeps every other draw, so maps change smoothly.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-sim">
+        <div class="ptitle" id="t-sim">Similarity</div>
+        <div class="seg" id="sim">
+          <button type="button" data-c="0" aria-pressed="true">Cosine of rates</button>
+          <button type="button" data-c="1" aria-pressed="false">After removing the mean</button>
+        </div>
+        <p class="hint">The similarity of two places is the cosine between the population's rate vectors there, averaged over every place. "After removing the mean" first subtracts one constant, the population's mean rate, from every cell (global inhibition), which removes the floor that overlapping fields create.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-sum">
+        <div class="ptitle" id="t-sum">Summary</div>
+        <dl class="stats" id="stats"></dl>
+      </section>
+    </aside>
+
+    <section class="main" aria-label="Kernel and cells">
+      <section class="panel" aria-labelledby="t-k">
+        <div class="ptitle" id="t-k">Similarity kernel</div>
+        <div class="kgrid">
+          <figure>
+            <svg class="plot" id="k2d" viewBox="0 0 340 330" role="img" aria-label="Similarity as a function of the offset between two places"></svg>
+            <figcaption>Similarity between each place and the place offset by (Δx, Δy), averaged over places. The dashed ring is the half-width.</figcaption>
+          </figure>
+          <figure>
+            <svg class="plot" id="k1d" viewBox="0 0 460 300" role="img" aria-label="Similarity against distance"></svg>
+            <div class="legend"><span>Measured on this population</span><span class="e">Expected for these settings (many cells)</span></div>
+            <div class="readout" id="k1d-read">Hover over the plot to read it.</div>
+          </figure>
+        </div>
+        <div id="status" role="status">Starting…</div>
+      </section>
+
+      <section class="panel" aria-labelledby="t-c">
+        <div class="ptitle" id="t-c">Cells</div>
+        <div class="cells">
+          <div class="big">
+            <div class="mapwrap"><canvas id="bigmap" width="128" height="128" aria-label="Rate map of the selected cell"></canvas><svg id="bigover" viewBox="0 0 128 128" aria-hidden="true"></svg></div>
+            <div class="readout" id="bigcap"></div>
+          </div>
+          <div class="big">
+            <div class="pager">
+              <button class="plain" id="prev" type="button">Previous</button>
+              <span id="pageinfo" style="font-family: var(--mono)"></span>
+              <button class="plain" id="next" type="button">Next</button>
+            </div>
+            <div class="tiles" id="tiles"></div>
+            <p class="hint">Each map is scaled to that cell's own peak. Click a cell to enlarge it; rings mark its fields at half maximum.</p>
+          </div>
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <footer>
+    <div>Check: <span id="chk" class="chip">pending</span></div>
+    <div>The kernel is exact for the drawn population: each cell's rates are divided by the population vector's length at each place, and the average over places of the dot product at offset (Δx, Δy) is read off the summed power spectra of the cells' maps. The expected curve is the large-population formula for random Poisson fields, ρ E[πσ² e^(−d²/4σ²)] plus the squared mean rate.</div>
+  </footer>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const L = 128, N = L * L, H = L / 2, FWHM = 2 * Math.sqrt(2 * Math.LN2), PER_PAGE = 40;
+
+// ---------------------------------------------------------------- shared with the worker
+// Per-cell random streams, so changing one setting keeps every other draw.
+function mulberry32(a) {
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function seedFor(seed, i, k) {
+  let h = Math.imul(seed | 0, 0x9E3779B1) ^ Math.imul(i + 1, 0x85EBCA77) ^ Math.imul(k + 7, 0xC2B2AE3D);
+  h = Math.imul(h ^ (h >>> 16), 0x7FEB352D); h = Math.imul(h ^ (h >>> 15), 0x846CA68B);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+function poissonInv(u, lam) {
+  if (!(lam > 0)) return 0;
+  let k = 0, p = Math.exp(-lam), c = p;
+  while (u > c && k < 100000) { k++; p *= lam / k; c += p; }
+  return k;
+}
+function gaussFrom(r) { const u = Math.max(r(), 1e-12); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+// Cell i's fields as [x, y, sigma, ...]: the count from one stream (monotone in the rate), the
+// fields from another (so the first fields stay put as the rate grows).
+function cellFields(P, i) {
+  const rc = mulberry32(seedFor(P.seed, i, 1)), rf = mulberry32(seedFor(P.seed, i, 2));
+  const lam = P.dens * N / 1e4, sigMed = P.fw / (2 * Math.sqrt(2 * Math.LN2));
+  const n = poissonInv(rc(), lam), out = new Float64Array(3 * n);
+  for (let k = 0; k < n; k++) { out[3 * k] = rf() * L; out[3 * k + 1] = rf() * L; out[3 * k + 2] = sigMed * Math.exp(P.spread * gaussFrom(rf)); }
+  return out;
+}
+
+// The background thread: draws every cell's map, then the kernel. Holds the maps for paging.
+function workerMain() {
+  const L = 128, N = L * L, H = L / 2;
+  let maps = null, D = 0;
+  const bitrev = new Int32Array(L), cosT = new Float64Array(L / 2), sinT = new Float64Array(L / 2);
+  for (let i = 0; i < L; i++) { let x = i, y = 0; for (let b = 0; b < 7; b++) { y = (y << 1) | (x & 1); x >>= 1; } bitrev[i] = y; }
+  for (let i = 0; i < L / 2; i++) { cosT[i] = Math.cos(2 * Math.PI * i / L); sinT[i] = -Math.sin(2 * Math.PI * i / L); }
+  const tr = new Float64Array(L), ti = new Float64Array(L);
+  // In-place forward DFT (e^-2 pi i k n / L) of L values at re[off + j * stride].
+  function fft1(re, im, off, stride) {
+    for (let i = 0; i < L; i++) { const j = off + bitrev[i] * stride; tr[i] = re[j]; ti[i] = im[j]; }
+    for (let size = 2; size <= L; size <<= 1) {
+      const half = size >> 1, step = L / size;
+      for (let s = 0; s < L; s += size) for (let k = 0; k < half; k++) {
+        const wr = cosT[k * step], wi = sinT[k * step], a = s + k, b = a + half;
+        const xr = tr[b] * wr - ti[b] * wi, xi = tr[b] * wi + ti[b] * wr;
+        tr[b] = tr[a] - xr; ti[b] = ti[a] - xi; tr[a] += xr; ti[a] += xi;
+      }
+    }
+    for (let i = 0; i < L; i++) { const j = off + i * stride; re[j] = tr[i]; im[j] = ti[i]; }
+  }
+  function fft2(re, im) { for (let y = 0; y < L; y++) fft1(re, im, y * L, 1); for (let x = 0; x < L; x++) fft1(re, im, x, L); }
+  // The FFT against a direct DFT on one random row, once.
+  function fftCheck() {
+    const r = mulberry32(12345), re = new Float64Array(L), im = new Float64Array(L), a = new Float64Array(L), b = new Float64Array(L);
+    for (let i = 0; i < L; i++) { re[i] = a[i] = r() - 0.5; im[i] = b[i] = r() - 0.5; }
+    fft1(re, im, 0, 1);
+    let err = 0;
+    for (let k = 0; k < L; k++) {
+      let sr = 0, si = 0;
+      for (let n = 0; n < L; n++) { const t = -2 * Math.PI * k * n / L, c = Math.cos(t), s = Math.sin(t); sr += a[n] * c - b[n] * s; si += a[n] * s + b[n] * c; }
+      err = Math.max(err, Math.abs(sr - re[k]), Math.abs(si - im[k]));
+    }
+    return err;
+  }
+  // A peak-1 Gaussian field at (cx, cy), cut at 3 sigma (or half the space), wrapped at the edges.
+  const gx = new Float64Array(L), gy = new Float64Array(L), xi = new Int32Array(L);
+  function addField(m, cx, cy, sig) {
+    const R = Math.min(Math.ceil(3 * sig), H), x0 = Math.round(cx), y0 = Math.round(cy);
+    const lo = -R, n = R === H ? L : 2 * R + 1, inv = 1 / (2 * sig * sig);
+    for (let j = 0; j < n; j++) {
+      const dx = x0 + lo + j - cx, dy = y0 + lo + j - cy;
+      gx[j] = Math.exp(-dx * dx * inv); gy[j] = Math.exp(-dy * dy * inv);
+      xi[j] = (((x0 + lo + j) % L) + L) % L;
+    }
+    for (let b = 0; b < n; b++) {
+      const g = gy[b];
+      if (g < 1e-7) continue;
+      const row = ((((y0 + lo + b) % L) + L) % L) * L;
+      for (let a = 0; a < n; a++) m[row + xi[a]] += g * gx[a];
+    }
+  }
+  function compute(P, units) {
+    const t0 = Date.now();
+    D = P.D;
+    maps = new Float32Array(D * N);
+    const counts = new Int32Array(D), widths = [];
+    for (let i = 0; i < D; i++) {
+      const F = cellFields(P, i), m = maps.subarray(i * N, (i + 1) * N);
+      counts[i] = F.length / 3;
+      for (let k = 0; k < F.length; k += 3) {
+        addField(m, F[k], F[k + 1], F[k + 2]);
+        if (widths.length < 20000) widths.push(F[k + 2] * 2 * Math.sqrt(2 * Math.LN2));
+      }
+    }
+    const t1 = Date.now();
+    let tot = 0;
+    for (let j = 0; j < maps.length; j++) tot += maps[j];
+    const meanRate = tot / maps.length, c = P.centred ? meanRate : 0;
+    const norm = new Float64Array(N);
+    for (let i = 0; i < D; i++) { const o = i * N; for (let p = 0; p < N; p++) { const y = maps[o + p] - c; norm[p] += y * y; } }
+    let nz = 0;
+    for (let p = 0; p < N; p++) { if (norm[p] > 0) { norm[p] = 1 / Math.sqrt(norm[p]); nz++; } }
+    // S(k): summed power spectra of the unit-length vectors' cells, two real maps per complex FFT
+    // (|A(k)|^2 + |B(k)|^2 = (|Z(k)|^2 + |Z(-k)|^2) / 2 for Z = A + iB).
+    const S = new Float64Array(N), re = new Float64Array(N), im = new Float64Array(N);
+    for (let i = 0; i < D; i += 2) {
+      const oa = i * N, ob = (i + 1) * N, hasB = i + 1 < D;
+      for (let p = 0; p < N; p++) { re[p] = (maps[oa + p] - c) * norm[p]; im[p] = hasB ? (maps[ob + p] - c) * norm[p] : 0; }
+      fft2(re, im);
+      for (let ky = 0; ky < L; ky++) {
+        const kyn = ((L - ky) % L) * L;
+        for (let kx = 0; kx < L; kx++) {
+          const k = ky * L + kx, kn = kyn + (L - kx) % L;
+          S[k] += 0.5 * (re[k] * re[k] + im[k] * im[k] + re[kn] * re[kn] + im[kn] * im[kn]);
+        }
+      }
+    }
+    // K(offset) = mean over places of the dot product = FFT(S) / N^2 (S is real and symmetric).
+    re.set(S); im.fill(0);
+    fft2(re, im);
+    const K = new Float32Array(N);
+    for (let p = 0; p < N; p++) K[p] = re[p] / (N * N);
+    const radial = new Float64Array(H + 1), cnt = new Float64Array(H + 1);
+    for (let dy = -H; dy < H; dy++) for (let dx = -H; dx < H; dx++) {
+      const d = Math.round(Math.hypot(dx, dy));
+      if (d > H) continue;
+      radial[d] += K[((dy + L) % L) * L + (dx + L) % L]; cnt[d]++;
+    }
+    for (let d = 0; d <= H; d++) radial[d] /= cnt[d];
+    return { K, radial, counts, widths: Float32Array.from(widths), meanRate, nzFrac: nz / N, D,
+             tMaps: t1 - t0, tKernel: Date.now() - t1, maps: pick(units) };
+  }
+  function pick(units) {
+    const out = new Float32Array(units.length * N);
+    units.forEach((u, q) => { if (u < D) out.set(maps.subarray(u * N, (u + 1) * N), q * N); });
+    return out;
+  }
+  const api = { compute, pick, fftCheck };
+  if (typeof self !== "undefined" && typeof window === "undefined") {
+    self.onmessage = e => {
+      const m = e.data;
+      try {
+        let res;
+        if (m.type === "compute") res = compute(m.P, m.units);
+        else if (m.type === "maps") res = { maps: pick(m.units) };
+        else if (m.type === "check") res = { err: fftCheck() };
+        const tf = [];
+        if (res.K) tf.push(res.K.buffer, res.radial.buffer, res.counts.buffer, res.widths.buffer);
+        if (res.maps) tf.push(res.maps.buffer);
+        self.postMessage({ id: m.id, res }, tf);
+      } catch (err) { self.postMessage({ id: m.id, error: String((err && err.message) || err) }); }
+    };
+  }
+  return api;
+}
+
+// ---------------------------------------------------------------- worker plumbing
+const wk = { w: null, next: 1, pending: new Map(), local: null };
+function startWorker() {
+  try {
+    const src = "\"use strict\";\nconst L = 128, N = L * L, H = L / 2;\n" + [mulberry32, seedFor, poissonInv, gaussFrom, cellFields, workerMain].map(f => f.toString()).join("\n\n") +
+      "\nworkerMain();\n";
+    const w = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+    w.onmessage = e => { const { id, res, error } = e.data, p = wk.pending.get(id); if (!p) return; wk.pending.delete(id); error ? p.reject(new Error(error)) : p.resolve(res); };
+    w.onerror = e => { if (e.preventDefault) e.preventDefault(); wk.w = null; for (const p of wk.pending.values()) p.reject(new Error("the background thread stopped")); wk.pending.clear(); };
+    wk.w = w;
+  } catch (e) { wk.w = null; }
+}
+// Without a background thread the same code runs here, more slowly and blocking the page.
+function call(type, msg) {
+  if (wk.w) return new Promise((resolve, reject) => { const id = wk.next++; wk.pending.set(id, { resolve, reject }); wk.w.postMessage(Object.assign({ id, type }, msg)); });
+  if (!wk.local) wk.local = workerMain();
+  return Promise.resolve(type === "compute" ? wk.local.compute(msg.P, msg.units) : type === "maps" ? { maps: wk.local.pick(msg.units) } : { err: wk.local.fftCheck() });
+}
+
+// ---------------------------------------------------------------- settings
+const st = { P: { D: 256, fw: 20, spread: 0.3, dens: 2, seed: 1, centred: false }, page: 0, sel: 0, res: null, busy: false, again: false };
+const SL = {
+  D: { el: "s-d", to: t => Math.round(16 * Math.pow(64, t / 1000)), from: v => 1000 * Math.log(v / 16) / Math.log(64), fmt: v => String(v) },
+  fw: { el: "s-w", to: t => 2 * Math.pow(30, t / 1000), from: v => 1000 * Math.log(v / 2) / Math.log(30), fmt: v => v.toFixed(1) + " cells" },
+  spread: { el: "s-s", to: t => t / 100, from: v => 100 * v, fmt: v => v.toFixed(2) },
+  dens: { el: "s-n", to: t => 0.1 * Math.pow(300, t / 1000), from: v => 1000 * Math.log(v / 0.1) / Math.log(300), fmt: v => v < 1 ? v.toFixed(2) : v.toFixed(1) },
+};
+function syncControls() {
+  for (const [k, s] of Object.entries(SL)) { $(s.el).value = String(Math.round(s.from(st.P[k]))); }
+  renderLabels();
+}
+function renderLabels() {
+  const P = st.P, w = P.fw, s = P.spread;
+  $("o-d").textContent = SL.D.fmt(P.D);
+  $("o-w").textContent = SL.fw.fmt(w);
+  $("o-s").textContent = s.toFixed(2) + " (5–95%: " + (w * Math.exp(-1.645 * s)).toFixed(1) + "–" + (w * Math.exp(1.645 * s)).toFixed(1) + ")";
+  $("o-n").textContent = SL.dens.fmt(P.dens);
+  $("h-n").textContent = "About " + (P.dens * N / 1e4).toFixed(1) + " fields per cell in this 128 × 128 space (Poisson).";
+}
+
+// ---------------------------------------------------------------- expected kernel (many cells)
+function probit(p) {
+  const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+  const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01];
+  const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+  const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00];
+  if (p < 0.02425) { const q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+  if (p > 1 - 0.02425) return -probit(1 - p);
+  const q = p - 0.5, r = q * q;
+  return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+}
+// Poisson fields at density rho: mean rate mu = rho E[2 pi s^2], covariance C(d) = rho E[pi s^2 exp(-d^2 / 4 s^2)].
+// Cosine of rates -> (C + mu^2) / (C(0) + mu^2); after removing the mean -> C / C(0).
+function expected(P) {
+  const rho = P.dens / 1e4, sm = P.fw / FWHM, Q = 64, C = new Float64Array(H + 1);
+  let mu = 0;
+  for (let q = 0; q < Q; q++) {
+    const sg = sm * Math.exp(P.spread * probit((q + 0.5) / Q)), w = rho / Q;
+    mu += w * 2 * Math.PI * sg * sg;
+    for (let d = 0; d <= H; d++) C[d] += w * Math.PI * sg * sg * Math.exp(-d * d / (4 * sg * sg));
+  }
+  const m2 = P.centred ? 0 : mu * mu, out = new Float64Array(H + 1);
+  for (let d = 0; d <= H; d++) out[d] = (C[d] + m2) / (C[0] + m2);
+  return { curve: out, floor: m2 / (C[0] + m2), mu };
+}
+// Where a curve falls halfway from its value at 0 to its far-field level.
+function halfWidth(curve, floor) {
+  const lvl = 0.5 * (curve[0] + floor);
+  for (let d = 1; d < curve.length; d++) if (curve[d] <= lvl) return d - 1 + (curve[d - 1] - lvl) / (curve[d - 1] - curve[d]);
+  return NaN;
+}
+
+// ---------------------------------------------------------------- colour
+const SEQ_LIGHT = ["#f3f7fc", "#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#2a78d6", "#1c5cab", "#104281", "#0d366b"];
+const DIV_LIGHT = ["#0d366b", "#1c5cab", "#3987e5", "#9ec5f4", "#f0efec", "#f3b4ad", "#e8706b", "#c5383a", "#7a1b1d"];
+const DIV_DARK = ["#b7d3f6", "#6da7ec", "#2a78d6", "#184f95", "#383835", "#8f2526", "#c5383a", "#e8706b", "#f3b4ad"];
+const isDark = () => { const t = document.documentElement.getAttribute("data-theme"); return t ? t === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches; };
+function makeLut(stops) {
+  const rgb = stops.map(h => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }), lut = new Uint8ClampedArray(768), last = stops.length - 1;
+  for (let i = 0; i < 256; i++) { const t = i / 255 * last, k = Math.min(Math.floor(t), last - 1), f = t - k; for (let ch = 0; ch < 3; ch++) lut[i * 3 + ch] = rgb[k][ch] * (1 - f) + rgb[k + 1][ch] * f; }
+  return lut;
+}
+let LUT = null;
+function buildLuts() { const d = isDark(); LUT = { seq: makeLut(d ? SEQ_LIGHT.slice().reverse() : SEQ_LIGHT), div: makeLut(d ? DIV_DARK : DIV_LIGHT) }; }
+function paint(cv, get, lo, hi, lut) {
+  const ctx = cv.getContext("2d"), img = ctx.createImageData(L, L), d = img.data, span = hi - lo;
+  for (let r = 0; r < L; r++) for (let c = 0; c < L; c++) {
+    let t = span > 0 ? (get(c, L - 1 - r) - lo) / span : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const li = ((t * 255 + 0.5) | 0) * 3, o = (r * L + c) * 4;
+    d[o] = lut[li]; d[o + 1] = lut[li + 1]; d[o + 2] = lut[li + 2]; d[o + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// ---------------------------------------------------------------- drawing
+const NS = "http://www.w3.org/2000/svg";
+function mk(tag, attrs, text) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; }
+function niceStep(x) { const p = Math.pow(10, Math.floor(Math.log10(x))), m = x / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; }
+const kcanvas = document.createElement("canvas"); kcanvas.width = L; kcanvas.height = L;
+
+function drawK2d(res, hw) {
+  const svg = $("k2d"), x0 = 40, y0 = 8, S = 280, K = res.K, centred = st.P.centred;
+  let lo = Infinity;
+  for (let p = 0; p < N; p++) lo = Math.min(lo, K[p]);
+  const div = centred, range = div ? [-1, 1] : [Math.min(0, lo), 1];
+  // offset (dx, dy) in [-64, 63], dy up
+  paint(kcanvas, (c, r) => K[((r - H + L) % L) * L + ((c - H + L) % L)], range[0], range[1], div ? LUT.div : LUT.seq);
+  const out = [mk("image", { x: x0, y: y0, width: S, height: S, href: kcanvas.toDataURL(), preserveAspectRatio: "none", style: "image-rendering: pixelated" })];
+  const px = d => x0 + (d + H) / L * S, py = d => y0 + (H - 1 - d + 0.5) / L * S;
+  for (const t of [-60, -30, 0, 30, 60]) {
+    out.push(mk("line", { class: "axis", x1: px(t) + S / L / 2, x2: px(t) + S / L / 2, y1: y0 + S, y2: y0 + S + 4 }));
+    out.push(mk("text", { x: px(t) + S / L / 2, y: y0 + S + 16, "text-anchor": "middle" }, String(t)));
+    out.push(mk("line", { class: "axis", x1: x0 - 4, x2: x0, y1: py(t), y2: py(t) }));
+    out.push(mk("text", { x: x0 - 7, y: py(t) + 3.5, "text-anchor": "end" }, String(t)));
+  }
+  out.push(mk("text", { class: "ttl", x: x0 + S / 2, y: y0 + S + 31, "text-anchor": "middle" }, "Δx (cells)"));
+  out.push(mk("text", { class: "ttl", x: 11, y: y0 + S / 2, "text-anchor": "middle", transform: "rotate(-90 11 " + (y0 + S / 2) + ")" }, "Δy (cells)"));
+  if (isFinite(hw)) out.push(mk("circle", { class: "ring", cx: px(0) + S / L / 2, cy: py(0), r: hw / L * S }));
+  svg.replaceChildren(...out);
+}
+
+function drawK1d(res, E) {
+  const svg = $("k1d"), W = 460, Ht = 300, ml = 48, mr = 14, mt = 12, mb = 40, pw = W - ml - mr, ph = Ht - mt - mb;
+  const meas = res ? Array.from(res.radial) : null, exp = Array.from(E.curve);
+  const all = exp.concat(meas || []);
+  const ymin = Math.min(0, Math.floor(Math.min(...all) * 10) / 10), ymax = 1;
+  const x = d => ml + d / H * pw, y = v => mt + (ymax - v) / (ymax - ymin) * ph;
+  const out = [];
+  const ys = niceStep((ymax - ymin) / 5);
+  for (let v = Math.ceil(ymin / ys) * ys; v <= ymax + 1e-9; v += ys) {
+    out.push(mk("line", { class: "grid", x1: ml, x2: W - mr, y1: y(v), y2: y(v) }));
+    out.push(mk("text", { x: ml - 6, y: y(v) + 3.5, "text-anchor": "end" }, (Math.abs(v) < 1e-9 ? 0 : v).toFixed(1)));
+  }
+  for (let d = 0; d <= H; d += 16) {
+    out.push(mk("line", { class: "axis", x1: x(d), x2: x(d), y1: mt + ph, y2: mt + ph + 4 }));
+    out.push(mk("text", { x: x(d), y: mt + ph + 16, "text-anchor": "middle" }, String(d)));
+  }
+  out.push(mk("line", { class: "axis", x1: ml, x2: W - mr, y1: mt + ph, y2: mt + ph }));
+  out.push(mk("text", { class: "ttl", x: ml + pw / 2, y: Ht - 6, "text-anchor": "middle" }, "Distance between the two places (cells)"));
+  out.push(mk("text", { class: "ttl", x: 12, y: mt + ph / 2, "text-anchor": "middle", transform: "rotate(-90 12 " + (mt + ph / 2) + ")" }, "Similarity"));
+  const path = arr => arr.map((v, d) => (d ? "L" : "M") + x(d).toFixed(1) + " " + y(v).toFixed(1)).join(" ");
+  out.push(mk("path", { class: "expd", d: path(exp) }));
+  if (meas) {
+    out.push(mk("path", { class: "meas", d: path(meas) }));
+    const hw = halfWidth(meas, tailMean(meas));
+    if (isFinite(hw)) {
+      out.push(mk("line", { class: "mark", x1: x(hw), x2: x(hw), y1: mt, y2: mt + ph }));
+      out.push(mk("text", { x: x(hw) + 5, y: mt + 12 }, "half-width " + hw.toFixed(1)));
+    }
+  }
+  const hl = mk("line", { class: "hover", x1: 0, x2: 0, y1: mt, y2: mt + ph, visibility: "hidden" });
+  out.push(hl);
+  const hit = mk("rect", { x: ml, y: mt, width: pw, height: ph, fill: "transparent" });
+  hit.addEventListener("pointermove", ev => {
+    const r = svg.getBoundingClientRect(), sx = (ev.clientX - r.left) / r.width * W, d = Math.max(0, Math.min(H, Math.round((sx - ml) / pw * H)));
+    hl.setAttribute("x1", x(d)); hl.setAttribute("x2", x(d)); hl.setAttribute("visibility", "visible");
+    $("k1d-read").textContent = "distance " + d + " cells: measured " + (meas ? meas[d].toFixed(3) : "–") + ", expected " + exp[d].toFixed(3);
+  });
+  hit.addEventListener("pointerleave", () => { hl.setAttribute("visibility", "hidden"); $("k1d-read").textContent = "Hover over the plot to read it."; });
+  out.push(hit);
+  svg.replaceChildren(...out);
+}
+const tailMean = c => { let s = 0, n = 0; for (let d = 48; d < c.length; d++) { s += c[d]; n++; } return s / n; };
+
+function drawWidths(res) {
+  const svg = $("whist"), W = 260, Ht = 92, ml = 6, mr = 6, mt = 6, mb = 22;
+  if (!res || !res.widths.length) { svg.replaceChildren(mk("text", { x: W / 2, y: Ht / 2, "text-anchor": "middle" }, "no fields")); return; }
+  const w = Array.from(res.widths).sort((a, b) => a - b), hi = w[Math.floor(0.995 * (w.length - 1))], nb = 30, bins = new Array(nb).fill(0);
+  for (const v of w) bins[Math.min(nb - 1, Math.floor(v / hi * nb))]++;
+  const top = Math.max(...bins), bw = (W - ml - mr) / nb, out = [];
+  bins.forEach((b, i) => { const h = b / top * (Ht - mt - mb); out.push(mk("rect", { class: "bar", x: ml + i * bw + 0.5, y: Ht - mb - h, width: Math.max(0.5, bw - 1), height: h, rx: 1 })); });
+  out.push(mk("line", { class: "axis", x1: ml, x2: W - mr, y1: Ht - mb, y2: Ht - mb }));
+  out.push(mk("text", { x: ml, y: Ht - 7 }, "0"));
+  out.push(mk("text", { x: W - mr, y: Ht - 7, "text-anchor": "end" }, hi.toFixed(0) + " cells"));
+  out.push(mk("text", { x: W / 2, y: Ht - 7, "text-anchor": "middle" }, "field widths drawn (" + w.length.toLocaleString() + ")"));
+  svg.replaceChildren(...out);
+}
+
+function pageUnits() {
+  const D = st.P.D, start = st.page * PER_PAGE, units = [];
+  for (let u = start; u < Math.min(D, start + PER_PAGE); u++) units.push(u);
+  if (!units.includes(st.sel)) units.push(st.sel);
+  return units;
+}
+function drawCells(units, maps) {
+  const box = $("tiles"), D = st.P.D, pages = Math.max(1, Math.ceil(D / PER_PAGE));
+  $("pageinfo").textContent = "cells " + (st.page * PER_PAGE + 1) + "–" + Math.min(D, (st.page + 1) * PER_PAGE) + " of " + D;
+  $("prev").disabled = st.page === 0; $("next").disabled = st.page >= pages - 1;
+  const shown = units.filter(u => u >= st.page * PER_PAGE && u < (st.page + 1) * PER_PAGE);
+  while (box.children.length < shown.length) {
+    const b = document.createElement("button"), cv = document.createElement("canvas"), cap = document.createElement("span");
+    b.type = "button"; b.className = "tile"; cv.width = L; cv.height = L; cap.className = "cap";
+    b.append(cv, cap);
+    b.addEventListener("click", () => { st.sel = Number(b.dataset.u); requestMaps(); });
+    box.append(b);
+  }
+  for (let i = 0; i < box.children.length; i++) box.children[i].hidden = i >= shown.length;
+  const counts = st.res ? st.res.counts : null;
+  units.forEach((u, q) => {
+    const off = q * N;
+    let peak = 0;
+    for (let p = 0; p < N; p++) if (maps[off + p] > peak) peak = maps[off + p];
+    const get = (c, r) => maps[off + r * L + c];
+    const i = shown.indexOf(u);
+    if (i >= 0) {
+      const b = box.children[i];
+      b.dataset.u = String(u); b.classList.toggle("sel", u === st.sel);
+      paint(b.firstChild, get, 0, peak || 1, LUT.seq);
+      const n = counts ? counts[u] : "?";
+      b.lastChild.textContent = "cell " + (u + 1) + " · " + n + (n === 1 ? " field" : " fields");
+      b.setAttribute("aria-label", b.lastChild.textContent);
+    }
+    if (u === st.sel) {
+      paint($("bigmap"), get, 0, peak || 1, LUT.seq);
+      const F = cellFields(st.P, u), rings = [];
+      for (let k = 0; k < F.length; k += 3) {
+        const r = F[k + 2] * FWHM / 2;
+        for (const ox of [0, -L, L]) for (const oy of [0, -L, L]) rings.push(mk("circle", { class: "ring", cx: F[k] + ox + 0.5, cy: L - 0.5 - (F[k + 1] + oy), r, "vector-effect": "non-scaling-stroke" }));
+      }
+      $("bigover").replaceChildren(...rings);
+      $("bigcap").textContent = "cell " + (u + 1) + ": " + F.length / 3 + (F.length === 3 ? " field" : " fields") +
+        (F.length ? ", widths " + Array.from({ length: F.length / 3 }, (_, k) => (F[3 * k + 2] * FWHM).toFixed(0)).join(", ") + " cells" : "") + "; peak rate " + peak.toFixed(2);
+    }
+  });
+}
+
+function drawStats(res, E) {
+  const rows = [], P = st.P;
+  if (res) {
+    const c = res.counts, n = c.length;
+    let s = 0, z = 0, mx = 0;
+    for (const v of c) { s += v; if (!v) z++; if (v > mx) mx = v; }
+    const w = Array.from(res.widths).sort((a, b) => a - b), q = f => w.length ? w[Math.floor(f * (w.length - 1))].toFixed(1) : "–";
+    const hwM = halfWidth(res.radial, tailMean(res.radial)), hwE = halfWidth(E.curve, E.floor);
+    rows.push(["Cells", String(n)]);
+    rows.push(["Fields per cell", "mean " + (s / n).toFixed(2) + " (expected " + (P.dens * N / 1e4).toFixed(2) + "), max " + mx]);
+    rows.push(["Cells with no field", (100 * z / n).toFixed(1) + "%"]);
+    rows.push(["Field width", "median " + q(0.5) + ", 5–95% " + q(0.05) + "–" + q(0.95) + " cells"]);
+    rows.push(["Kernel half-width", (isFinite(hwM) ? hwM.toFixed(1) : "beyond 64") + " cells (expected " + (isFinite(hwE) ? hwE.toFixed(1) : "–") + ")"]);
+    rows.push(["Far-field similarity", tailMean(res.radial).toFixed(3) + " (expected " + E.floor.toFixed(3) + ")"]);
+    rows.push(["Places with no active cell", (100 * (1 - res.nzFrac)).toFixed(2) + "%"]);
+    rows.push(["Mean rate", res.meanRate.toFixed(3) + " (expected " + E.mu.toFixed(3) + ")"]);
+    rows.push(["Computed in", (res.tMaps + res.tKernel) + " ms (maps " + res.tMaps + ", kernel " + res.tKernel + ")"]);
+  }
+  $("stats").replaceChildren(...rows.flatMap(([k, v]) => { const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = k; dd.textContent = v; return [dt, dd]; }));
+}
+
+// ---------------------------------------------------------------- update loop
+function setStatus(t, err) { const s = $("status"); s.textContent = t; s.classList.toggle("err", !!err); }
+window.addEventListener("error", e => setStatus("Page error: " + (e.message || String(e.error)), true));
+window.addEventListener("unhandledrejection", e => setStatus("Page error: " + ((e.reason && e.reason.message) || String(e.reason)), true));
+
+// The expected curve follows the sliders at once; the measured kernel and maps follow when the
+// background thread finishes (the newest settings only).
+function changed() {
+  renderLabels();
+  drawK1d(st.res && st.res.P && sameKernelSettings(st.res.P, st.P) ? st.res : null, expected(st.P));
+  st.again = true;
+  if (!st.busy) run();
+}
+const sameKernelSettings = (a, b) => ["D", "fw", "spread", "dens", "seed", "centred"].every(k => a[k] === b[k]);
+async function run() {
+  st.busy = true;
+  while (st.again) {
+    st.again = false;
+    const P = Object.assign({}, st.P);
+    if (st.sel >= P.D) st.sel = 0;
+    st.page = Math.min(st.page, Math.max(0, Math.ceil(P.D / PER_PAGE) - 1));
+    const units = pageUnits();
+    setStatus("Drawing " + P.D + " cells and their kernel…");
+    let res;
+    try { res = await call("compute", { P, units }); }
+    catch (e) { setStatus("Could not compute: " + e.message, true); break; }
+    res.P = P; st.res = res;
+    const E = expected(P);
+    drawK2d(res, halfWidth(res.radial, tailMean(res.radial)));
+    drawK1d(res, E);
+    drawWidths(res);
+    drawCells(units, res.maps);
+    drawStats(res, E);
+    setStatus(P.D + " cells, " + (P.dens * N / 1e4).toFixed(1) + " fields per cell on average · " + (res.tMaps + res.tKernel) + " ms" + (wk.w ? "" : " (no background thread, so the page pauses while it computes)"));
+  }
+  st.busy = false;
+}
+async function requestMaps() {
+  if (!st.res) return;
+  const units = pageUnits();
+  try { const r = await call("maps", { units }); drawCells(units, r.maps); } catch (e) { setStatus("Could not draw the maps: " + e.message, true); }
+}
+
+// ---------------------------------------------------------------- controls
+function wire() {
+  for (const [k, s] of Object.entries(SL)) $(s.el).addEventListener("input", () => { st.P[k] = s.to(+$(s.el).value); changed(); });
+  $("seed").addEventListener("change", () => { const v = parseInt($("seed").value, 10); if (v > 0) { st.P.seed = v; changed(); } else $("seed").value = String(st.P.seed); });
+  $("reseed").addEventListener("click", () => { st.P.seed = 1 + Math.floor(Math.random() * 999998); $("seed").value = String(st.P.seed); changed(); });
+  document.querySelectorAll("#sim button").forEach(b => b.addEventListener("click", () => {
+    st.P.centred = b.dataset.c === "1";
+    document.querySelectorAll("#sim button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    changed();
+  }));
+  $("prev").addEventListener("click", () => { st.page = Math.max(0, st.page - 1); requestMaps(); });
+  $("next").addEventListener("click", () => { st.page += 1; requestMaps(); });
+  const onTheme = () => { buildLuts(); if (st.res) { drawK2d(st.res, halfWidth(st.res.radial, tailMean(st.res.radial))); requestMaps(); } };
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", onTheme);
+  new MutationObserver(onTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+}
+
+(async () => {
+  buildLuts();
+  startWorker();
+  wire();
+  syncControls();
+  drawK1d(null, expected(st.P));
+  st.again = true;
+  run();
+  try {
+    const r = await call("check", {});
+    const ok = r.err < 1e-9;
+    $("chk").className = "chip " + (ok ? "ok" : "bad");
+    $("chk").textContent = "FFT matches a direct DFT to " + r.err.toExponential(1);
+  } catch (e) { $("chk").className = "chip bad"; $("chk").textContent = "FFT check failed: " + e.message; }
+})();
+</script>
