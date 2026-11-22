@@ -2392,9 +2392,18 @@ column to compare is revisit over all envs (idea 1: 1.000 in 12.85 steps).
 |---|---|---|---|
 | arm 1 u1000 (frozen memory) | 0.30 | 0.35 | 74 |
 | arm 2 u1000 (frozen memory) | 0.45 | 0.28 | 76 |
+| arm 3 u1000 (memory from random, PPO) | 0.53 | | 81 |
+| arm 5 u1000 (memory at lr x 1, PPO) | 0.50 | | 83 |
+| arm 5b u1000 (memory at lr x 0.1, PPO) | 0.45 | 0.70 | 84 |
 | arm 1 u800 + DAgger round 1 memory | 0.44 | 1.00 | 49 |
 | idea 1 u3800 + DAgger round 1 memory | 0.04 | 1.00 (17 steps) | |
 
+Every u1000 agent is at about what search alone gives in 200 steps. The
+shadow decode along the agent's path is about 0 for every trainable arm
+(far_hit 0.000 to 0.021 for arm 3, at most 0.011 for 5b), and arm 3's c is
+the same with and without a stored goal (0.4 to 0.49 against 0.39): after
+1000 updates PPO has not made a goal memory from random weights, and at a
+tenth of the lr it has kept but not adapted the supervised one.
 With the frozen memory both controllers search throughout: arm 2's table is
 0.4 to 0.55 in every cell, own block and revisits alike, and arm 1 reaches
 its one stored goal in block 0 on 35% of trials. The lifetime evaluation
@@ -2427,8 +2436,10 @@ passes over 12 lifetimes fit those paths, not the agent's next ones.
 
 Round 2 (running): 24 lifetimes of arm 1 u800 with the round 1 memory
 (`--split place=same`, which mints no new placements; the trainer replaces
-the arenas anyway), jobs 30005125 and 30005126; then train_replay from the
-round 1 memory on all recordings.
+the arenas anyway), jobs 30005125 and 30005126, all 24 written; then
+train_replay from the round 1 memory on all 44 recordings (12 + 8 of arm 1
+with the frozen memory, 24 with the round 1 memory), 4000 updates, c weight
+1 (job 30020103) and 3 (job 30020115), each tested with both controllers.
 
 Smoke tests passed for every path. Arms 3 and 4 run at about twice the time
 per update of the frozen arms (backpropagation through the memory), so they
