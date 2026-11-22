@@ -2293,6 +2293,11 @@ and i4_v32 (arms 1, 3, 4). Each arm is `hopfield_nav/run_idea4_agent_chain.sh`:
 
 Arm 4 was cancelled at about u420 (its resume/latest.pt is kept) and
 replaced by 4b, after the persistence test below showed its memory gone.
+Arms 5 (about u1350) and 4b (about u1300) were cancelled on 2026-11-22 to
+free the cluster: arm 5's memory was erased by u300, so it trains a
+memoryless searcher; 4b's question (does a scratch controller learn to use
+a kept memory) is bounded by arm 2 and the shadow decode, since the memory
+does not decode along the agent's path. Both resume/latest.pt are kept.
 
 Arm 5 was added after arm 1's first 250 updates. Arm 1 held known_reached
 at 0.55 to 0.69 over six evaluations while its steps to a known goal fell
