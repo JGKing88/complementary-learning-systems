@@ -2496,6 +2496,21 @@ trained on the agent's own paths plus a controller trained around it is
 the combination that works best; the full loop would record with this
 controller, retrain the memory, and retrain the controller.
 
+DAgger round 3 (from round 2 c weight 3, all 68 recordings, 5000 updates,
+replay far-read cosine 0.82): arm 1's controller 0.32 over all envs (round
+2: 0.44), idea 1's 0.39 (round 2: 0.30). With idea 1's controller env 0
+holds 1.00, 0.80, 0.35, 0.57, 0.90 over blocks 1 to 5 and env 2 is 1.00 in
+its own block, but envs 1, 4 and 5 are never found in their own blocks
+(0.03 to 0.05): in a new env with c high the controller follows a wrong d
+instead of searching. Retention of held goals improves round by round; the
+miscalibrated c in new envs is what arm 6's PPO addresses. Tests of arm 6
+u750 with the round 2 and round 3 memories (jobs 30051973, 30051974).
+
+Round 4: 24 lifetimes of arm 6 u500 with its round 2 memory (jobs 30043030,
+30043031), then train_replay on all 92 recordings from round 2 c weight 3
+(job 30052732) and from round 3 (job 30052736), 5000 updates, c weight 3,
+each tested with arm 6's u1000 controller and idea 1's.
+
 Smoke tests passed for every path. Arms 3 and 4 run at about twice the time
 per update of the frozen arms (backpropagation through the memory), so they
 have 16 links against 8.
