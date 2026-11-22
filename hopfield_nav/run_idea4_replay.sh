@@ -27,5 +27,5 @@ source scripts/cls_env.sh
 python -u -m analysis.idea4.train_replay \
     --init_from "${INIT:?}" --records "${RECORDS:?}" --out "${OUT:?}" \
     --steps "${STEPS:-3000}" --lr "${LR:-1e-4}" --batch "${BATCH:-32}" \
-    --eval_every "${EVAL_EVERY:-1000}"
+    --eval_every "${EVAL_EVERY:-1000}" --c_unknown_weight "${C_UNKNOWN_WEIGHT:-1}"
 echo "[i4replay] done $(date)"

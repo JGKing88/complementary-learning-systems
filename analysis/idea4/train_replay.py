@@ -17,7 +17,8 @@ Each of ``--batch`` rows replays one recorded lifetime; a row that reaches the
 end of its recording starts another from a zero state, with new arenas and
 offsets. Loss as ``train_protocol.py``: on every read more than 1.5 cells from
 a stored goal, the cosine error of the decoded goal phases; on every read, c
-(target 1 once the current arena's goal is stored, including the store read).
+(target 1 once the current arena's goal is stored, including the store read),
+with reads that have nothing stored weighted by ``--c_unknown_weight``.
 Streamed in windows of ``--window`` reads, the state carried on detached.
 
 Test every ``--eval_every`` updates: ``persist.run`` on held-out arenas under
@@ -88,6 +89,10 @@ def main():
     p.add_argument("--batch", type=int, default=32)
     p.add_argument("--window", type=int, default=256)
     p.add_argument("--lr", type=float, default=1e-4)
+    p.add_argument("--c_unknown_weight", type=float, default=1.0,
+                   help="weight of the c loss on reads whose arena has no stored goal (about "
+                        "a quarter of the reads; the agent's idea 1 controller follows d "
+                        "whenever c is high, so a high c there stops it searching)")
     p.add_argument("--n_train_envs", type=int, default=4000)
     p.add_argument("--n_eval_envs", type=int, default=300)
     p.add_argument("--eval_every", type=int, default=1000)
@@ -166,8 +171,10 @@ def main():
         pw = (known & te.far_from(pos, goal)).float()
         ct = (known | flag).float()
         pl = pl + ((1 - cos) * pw).sum()
-        cl = cl + F.binary_cross_entropy_with_logits(cl_logit[0], ct, reduction="sum")
-        npw, ncw = npw + pw.sum(), ncw + B
+        cw = 1.0 + (c.c_unknown_weight - 1.0) * (1.0 - ct)    # reads with nothing stored
+        cl = cl + (F.binary_cross_entropy_with_logits(cl_logit[0], ct, reduction="none")
+                   * cw).sum()
+        npw, ncw = npw + pw.sum(), ncw + cw.sum()
         cd, sg = cos.detach(), torch.sigmoid(cl_logit[0].detach())
         stat["cos"] += (cd * pw).sum()
         stat["n"] += pw.sum()
