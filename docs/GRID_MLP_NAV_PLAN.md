@@ -1279,6 +1279,15 @@ write key, raises this to 6.0 and leaves the growing cost in place
 (§7b.12). Idea 2's plastic MLP holds 7.8 at N = 30 on the same test. With perfect keys and no arena, an
 LSTM of width 2048 holds 17.5 of 20 (§7b.10).
 
+As an agent (2026-11-22, §7b.14 and §7b.15): no controller trained around
+the memory, and no PPO training of the memory itself, uses it on the full
+protocol (revisit 0.26 to 0.53 over all envs, all searching; idea 1:
+1.000). PPO does not make a goal memory from random weights, erases the
+supervised one at the controller's lr, and keeps but does not adapt it at a
+tenth. The memory fails along the agent's own path; training it on
+recorded agent paths (DAgger) fixes that for 2 to 3 goals, and a controller
+retrained around that memory reaches 0.55 to 0.65.
+
 Idea 4 differs from idea 3 (§7). Idea 3's GRU has to decode directions, hold
 goals and choose actions in one state. Idea 4's network only holds goals, and
 no actions are learned for its main result.
@@ -2511,6 +2520,59 @@ Round 4: 24 lifetimes of arm 6 u500 with its round 2 memory (jobs 30043030,
 (job 30052732) and from round 3 (job 30052736), 5000 updates, c weight 3,
 each tested with arm 6's u1000 controller and idea 1's.
 
+| memory | arm 6 u1000 controller | idea 1 u3800 controller |
+|---|---|---|
+| round 2 c weight 3 (arm 6's own) | 0.47 | 0.30 |
+| round 4 from round 2 | 0.55 | 0.22 |
+| round 4 from round 3 | 0.59 | 0.06 |
+
+Arm 6 itself, with its own memory: 0.65 at u500, 0.60 at u750, 0.47 at
+u1000 (at u750 the round 3 memory gave 0.55). Round 4's data came from arm
+6, which searches; its memory suits that controller and no longer suits
+idea 1's, which fails even block 0. Memory and controller now co-adapt, so a
+memory scored behind a fixed controller says little on its own.
+
+Conclusion (2026-11-22). The question was whether idea 4 works as an agent
+once the agent is trained around the memory, and whether the same RL that
+trains the other ideas can learn this kind of memory without a memory loss.
+
+1. A controller trained around the frozen supervised memory does not use
+   it (arms 1, 2: 0.30 and 0.45 revisit over all envs at u1000, searching
+   in every cell). Along the agent's own path the memory decodes the goal
+   on almost no far reads, so there is nothing to use.
+2. PPO does not learn this memory. From random weights (arm 3) no goal code
+   forms (persist 0.10 goals at u400; at u1000 shadow far_hit about 0 and c
+   the same with and without a stored goal; no memory use in the lifetime
+   evaluations through u1750). Unfrozen at the controller's lr
+   (arms 4, 5) PPO erases the supervised memory in 300 to 400 updates; at a
+   tenth (arms 4b, 5b) it keeps it (3.3 goals offline) but does not adapt
+   it to the agent's path (far_hit about 0 at u1000). Every such agent
+   searches (0.26 to 0.53).
+3. The failure is the agent's movement. Replaying recorded agent paths
+   through the training arenas reproduces it with the training views, and
+   training the memory on those paths (DAgger) fixes it for the newest 2 to
+   3 goals: one goal 40 of 40, two goals at idea 1's speed (14 steps) with
+   idea 1's controller. Along the agent's path the memory then holds 2 to 3
+   goals; offline under scripted walks it held 3 to 5, and the protocol
+   needs 6.
+4. Training both, the memory on the agent's paths and the controller
+   around the memory (arm 6, DAgger rounds 2 to 4), is the best idea 4
+   agent: 0.55 to 0.65 revisit over all envs, the first goal kept through
+   every block, against idea 1's 1.000 in 12.85 steps. More DAgger rounds
+   move it by a few points either way.
+
+An activity memory can work as an agent's memory only when it is trained
+on that agent's own movement, and then for a few goals; RL alone does not
+find it. A table needs neither: it changes only at the store, so the
+agent's movement between stores cannot disturb what it holds.
+
+Final protocol runs are queued behind each remaining chain's last link
+(arm 1 job 30061597, arm 2 30061598, arm 3 30061599, arm 5b 30061600, arm
+6 30061601; `run_idea4_agent_cl.sh` on `navigate_final.pt`, results in
+`$CLS_RUNS/idea4/agent_cl/cl_<arm>_final.json`). Recordings are in
+`$CLS_RUNS/idea4/replay/rec_*`, DAgger memories in
+`$CLS_RUNS/idea4/replay/r*_*/memory.pt`.
+
 Smoke tests passed for every path. Arms 3 and 4 run at about twice the time
 per update of the frozen arms (backpropagation through the memory), so they
 have 16 links against 8.
@@ -2529,7 +2591,7 @@ have 16 links against 8.
 | Idea 2 `M` | MLP; phase outputs + confidence; panorama view input — **agreed** |
 | Idea 2 training | Default in §6.2 and §6.3. One plastic MLP, meta-learn θ₀ and α, supervised write at the store, PPO does not train `M`. **Decided.** Variants in §6.5, small choices in §6.6. |
 | Idea 3 | GRU with the live view, `g_t`, previous action and reward; no memory readout. Hidden state carried across visits (stage 1), then across the continual protocol (stage 2). **Decided**; rest open (§7.4). |
-| Idea 4 | Compared as a memory on one retention test: capacity, cost of one more goal and size, against idea 1's table, Hopfield, idea 2 and the delta rule (§7b.13). Agent run only in a ≤6-goal regime (§7b.14). **Decided.** |
+| Idea 4 | Compared as a memory on one retention test: capacity, cost of one more goal and size, against idea 1's table, Hopfield, idea 2 and the delta rule (§7b.13). Agent run only in a ≤6-goal regime (§7b.14); agents trained around the memory and with the memory learned by PPO (§7b.15): best 0.55 to 0.65 revisit, via DAgger on the agent's paths plus a retrained controller, against idea 1's 1.000. **Decided.** |
 | d0_base recipe | later variant |
 | Learned store head | later, once the oracle version works |
 
