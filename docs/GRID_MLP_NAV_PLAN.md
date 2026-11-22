@@ -2383,6 +2383,45 @@ u800 at 40 iterations per block (job 29982788), then train_replay from
 controllers) on the continual protocol with the new memory, then record
 again with it.
 
+The full protocol at u1000 (6 recorded envs, 40 iterations per block,
+200-step cap, sampled). The retention tool calls an env "dead" when its
+own-block success is low and leaves it out of "live" revisits, so the
+column to compare is revisit over all envs (idea 1: 1.000 in 12.85 steps).
+
+| agent | revisit, all envs | block 0 (one goal) | live-env revisit steps |
+|---|---|---|---|
+| arm 1 u1000 (frozen memory) | 0.30 | 0.35 | 74 |
+| arm 2 u1000 (frozen memory) | 0.45 | 0.28 | 76 |
+| arm 1 u800 + DAgger round 1 memory | 0.44 | 1.00 | 49 |
+| idea 1 u3800 + DAgger round 1 memory | 0.04 | 1.00 (17 steps) | |
+
+With the frozen memory both controllers search throughout: arm 2's table is
+0.4 to 0.55 in every cell, own block and revisits alike, and arm 1 reaches
+its one stored goal in block 0 on 35% of trials. The lifetime evaluation
+(3 arenas, 2 passes) flattered them.
+
+DAgger round 1. 12 of the 24 lifetimes were usable: minting held-out
+arenas against a run whose arenas moved every update fails for some seeds
+(no 6 placements 80 apart clear of all used ones), and the job was
+cancelled once seeds 1 to 12 (less the failed s4, plus s14) were written.
+train_replay on those 1.39M reads for 3000 updates (lr 1e-4, batch 32):
+the far-read cosine on the replayed agent paths rose from 0.69 to 0.83;
+under scripted walks the memory now holds 1.1 to 1.3 goals (3.1 before).
+In the agent, the most recent goal works along the agent's own path for
+the first time: one arena succeeds on 40 of 40 trials, and in block 5 the
+newest arena has far_hit 0.68 and cos_d 0.90 (success 1.00); the second
+newest has far_hit 0.25 and older ones about 0. Along the agent's path the
+memory holds 1 to 2 goals. c stays near 1 in arenas with no stored goal
+(c_unknown 0.99 to 1.00), so idea 1's controller, which follows d whenever
+c is high, never searches once a second arena arrives: it follows a wrong d
+and finds none of arenas 1 to 5. Arm 1's controller, trained around a
+noisy memory, keeps searching.
+
+Round 2 (running): 24 lifetimes of arm 1 u800 with the round 1 memory
+(`--split place=same`, which mints no new placements; the trainer replaces
+the arenas anyway), jobs 30005125 and 30005126; then train_replay from the
+round 1 memory on all recordings.
+
 Smoke tests passed for every path. Arms 3 and 4 run at about twice the time
 per update of the frozen arms (backpropagation through the memory), so they
 have 16 links against 8.
