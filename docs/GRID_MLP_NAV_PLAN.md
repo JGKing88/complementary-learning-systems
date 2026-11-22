@@ -2473,6 +2473,29 @@ and idea 1's (job 30030963), then train_replay on all 68; and arm 6, idea
 memory (arm 1's recipe, jobs 30030964 to 30030980), which could learn to
 follow d where the memory is right and search where it is not.
 
+Arm 6 at u500 is the best idea 4 agent so far. Lifetime evaluation:
+known_reached 0.77 at u0 (25 steps) with unknown_found 0.08 (idea 1's
+controller does not search when c is high), 0.89 at u500 with unknown_found
+0.19. On the full protocol at u500 (job 30041803): revisit over all envs
+0.65 (arm 3, the best searcher, 0.53; DAgger round 2 with idea 1's
+controller unchanged 0.30; idea 1 1.000).
+
+| block | e0 | e1 | e2 | e3 | e4 | e5 |
+|---|---|---|---|---|---|---|
+| 0 | 1.00 | | | | | |
+| 1 | 0.97 | 0.80 | | | | |
+| 2 | 0.97 | 0.88 | 0.38 | | | |
+| 3 | 0.93 | 0.35 | 0.75 | 0.78 | | |
+| 4 | 0.82 | 0.17 | 0.55 | 0.72 | 0.30 | |
+| 5 | 0.70 | 0.15 | 0.55 | 0.82 | 0.38 | 0.85 |
+
+The first goal survives every block, e3 holds 0.72 to 0.82, the newest
+arena decodes along the path (far_hit 0.32, cos_d 0.73); e1 fades and
+revisits take 73 steps on average (beelines and searches mixed). A memory
+trained on the agent's own paths plus a controller trained around it is
+the combination that works best; the full loop would record with this
+controller, retrain the memory, and retrain the controller.
+
 Smoke tests passed for every path. Arms 3 and 4 run at about twice the time
 per update of the frozen arms (backpropagation through the memory), so they
 have 16 links against 8.
