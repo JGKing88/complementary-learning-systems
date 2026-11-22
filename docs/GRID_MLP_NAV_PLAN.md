@@ -2441,6 +2441,33 @@ train_replay from the round 1 memory on all 44 recordings (12 + 8 of arm 1
 with the frozen memory, 24 with the round 1 memory), 4000 updates, c weight
 1 (job 30020103) and 3 (job 30020115), each tested with both controllers.
 
+Round 2 results (replay far-read cosine 0.86 and 0.84 at 4000 updates):
+
+| memory | controller | revisit, all envs | block 0 | env 0 over blocks 1 to 5 |
+|---|---|---|---|---|
+| round 1 | arm 1 u800 | 0.44 | 1.00 | 0.97 0.97 0.50 0.55 0.40 |
+| round 2, c weight 1 | arm 1 u800 | 0.46 | 1.00 | 0.90 0.72 0.45 0.75 0.82 |
+| round 2, c weight 3 | arm 1 u800 | 0.44 | 1.00 | 0.82 0.30 0.40 0.30 0.57 |
+| round 1 | idea 1 u3800 | 0.04 | 1.00 | 0.15 0.03 0.05 0.03 0.05 |
+| round 2, c weight 1 | idea 1 u3800 | 0.27 | 1.00 (16 steps) | 0.80 0.70 0.72 0.05 0.12 |
+| round 2, c weight 3 | idea 1 u3800 | 0.30 | 1.00 (14 steps) | 0.97 0.88 0.60 0.05 0.07 |
+
+With idea 1's controller the c weight 3 memory holds two goals at idea 1's
+speed: env 0 at 0.97, 0.88, 0.60 through block 3, env 2 at 0.90 in its own
+block in 14 steps and 0.80 in the next; from the fourth goal on nearly
+everything is about 0.05, and the newest env, with nothing stored, has c
+0.95, so the controller does not search there. Along the agent's path the
+memory holds 2 to 3 goals (offline under scripted walks it held 3 to 5
+before DAgger); 6 are needed. DAgger fixes the movement brittleness for a
+few goals, not the capacity under that movement.
+
+Next (launched 2026-11-21 late): round 3 recordings with the round 2 c
+weight 3 memory, 12 lifetimes each with arm 1's controller (job 30030962)
+and idea 1's (job 30030963), then train_replay on all 68; and arm 6, idea
+1's u3800 controller fine-tuned by PPO around the frozen round 2 c weight 3
+memory (arm 1's recipe, jobs 30030964 to 30030980), which could learn to
+follow d where the memory is right and search where it is not.
+
 Smoke tests passed for every path. Arms 3 and 4 run at about twice the time
 per update of the frozen arms (backpropagation through the memory), so they
 have 16 links against 8.
