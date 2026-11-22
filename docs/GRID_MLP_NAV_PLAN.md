@@ -2417,6 +2417,14 @@ c is high, never searches once a second arena arrives: it follows a wrong d
 and finds none of arenas 1 to 5. Arm 1's controller, trained around a
 noisy memory, keeps searching.
 
+Round 1c: round 1's memory plus 1500 updates on the same 12 lifetimes with
+the c loss on no-goal reads weighted 3 (`--c_unknown_weight 3`, commit
+6fa3949). The replay far-read cosine rose to 0.90 to 0.93 and c on no-goal
+reads fell (0.44 along the agent's path, from 0.99), but in the agent the
+newest goal's far_hit fell from 0.68 to 0.08: arm 1's controller 0.41 over
+all envs (block 0 0.97), idea 1's 0.13 (block 0 0.10, from 1.00). More
+passes over 12 lifetimes fit those paths, not the agent's next ones.
+
 Round 2 (running): 24 lifetimes of arm 1 u800 with the round 1 memory
 (`--split place=same`, which mints no new placements; the trainer replaces
 the arenas anyway), jobs 30005125 and 30005126; then train_replay from the
