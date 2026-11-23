@@ -424,10 +424,12 @@ et al. 2020).
 Independent bumps: density 0.2, 0.66, 0.85 and 3 fields per 100² cells give 0.0024, 0.0080, 0.0103 and
 0.036 per grid period².
 
-* **The rectified ideal codes have a quarter to a third of the rat's field density** at the same grid
-  scale, at most 0.010 per grid period² (at 20% active) against 0.020 to 0.031.
-* **The hippocampus layer has 20 to 500 times the rat's density**, because its fields are one to five
-  cells across.
+* **The rectified ideal codes are sparser in fields than the rat** at the same grid scale: at most
+  0.010 per grid period² (at 20% active), a third to a half of the rat's 0.020 to 0.031, and 0.008
+  (a quarter to two fifths) at 10%.
+* **The hippocampus layer is far denser in fields than the rat**, because its fields are one to five
+  cells across: 16 to 70 times the rat's density with the smoothed input, 75 to 740 times with the
+  one-hot input.
 * **Bumps at rat density (0.020 to 0.031, between the probed 0.85 and 3 per 100²) work well in the
   memory with inhibition:** at 0.85 and 3 per 100² the probe gives 2.7 and 1.8 degrees, exact
   retrieval 1.00 and a 31-cell basin at K = 5.
