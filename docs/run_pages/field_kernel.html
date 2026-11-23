@@ -57,6 +57,7 @@ code { font-size: .85em; background: var(--panel); padding: 1px 5px; border-radi
 .maps .mh b { display: block; font-weight: 600; }
 .maps .mh span { color: var(--fg2); font-size: .74rem; }
 .maps .ml { font-size: .78rem; color: var(--fg2); }
+li b { font-weight: 600; }
 .eq { font-family: "STIX Two Text", Georgia, "Times New Roman", serif; font-size: 1.08rem; padding: 4px 0 4px 18px; border-left: 2px solid var(--rule); overflow-x: auto; white-space: nowrap; }
 .eq i, p i.v { font-family: "STIX Two Text", Georgia, "Times New Roman", serif; }
 table.small { min-width: 420px; max-width: 560px; }
@@ -64,9 +65,9 @@ table.small { min-width: 420px; max-width: 560px; }
 
 <div class="wrap">
   <header>
-    <div class="kicker">Ideal encoder &middot; field width against kernel width &middot; 2026-11-21</div>
-    <h1>Can a code have small place fields and a wide kernel?</h1>
-    <p class="lede">Yes. Give each unit a slow input and a fast input before the threshold. Fields shrink from 30 cells to 6 to 8, the population kernel stays wide, and retrieval is unchanged. The direction readout gets noisier and needs more units.</p>
+    <div class="kicker">Ideal encoder &middot; field width against kernel width &middot; 2026-11-23</div>
+    <h1>A wide kernel implies wide fields</h1>
+    <p class="lede">The memory needs a population kernel about 38 cells wide. The kernel is the average overlap of each cell's map with a shifted copy of itself, so each cell has to fire across a region about that wide. A fast input can break that region into small patches, but it is the same region, it costs units, and it predicts a clustering of fields that recordings do not show. The clean prediction is wide fields in the population the memory reads.</p>
   </header>
 
   <section>
@@ -75,60 +76,100 @@ table.small { min-width: 420px; max-width: 560px; }
       <div><b>Field width</b><span>A property of one unit: how long a stretch of positions it fires over. Mouse dorsal CA1 fields are 0.4 to 0.5 grid periods. The current sparse ideal code has 2.5.</span></div>
       <div><b>Kernel width</b><span>A property of the population: how far apart two positions can be and still have similar activity vectors. The memory needs this to be wide, because the similarity to a stored goal is the only signal that says which way the goal is.</span></div>
     </div>
-    <p>The kernel is the average, over units, of how much each unit's map overlaps with a shifted copy of itself. So the two quantities come from the same single-unit maps. The question is whether they have to move together.</p>
   </section>
 
   <section>
-    <h2>Why they are tied in the current code</h2>
-    <p><b>The unit.</b> The ideal code <i class="v">z</i> has a cos unit and a sin unit for each of <i class="v">M</i> = 512 waves, with frequencies <i class="v">&omega;<sub>i</sub></i> ~ N(0, 1/<i class="v">r</i>&sup2;). Unit <i class="v">u</i> of the rotated code takes row <i class="v">u</i> of the rotation <i class="v">Q</i> as its input and thresholds it:</p>
-    <div class="eq"><i>s<sub>u</sub></i>(<i>x</i>) = max(<i>y<sub>u</sub></i>(<i>x</i>) &minus; <i>t</i>, 0), &nbsp; <i>y<sub>u</sub></i>(<i>x</i>) = &Sigma;<sub><i>j</i></sub> <i>Q<sub>uj</sub></i> <i>z<sub>j</sub></i>(<i>x</i>)</div>
-    <p>Row <i class="v">u</i> puts one weight on the cos of wave <i class="v">i</i> and another on its sin. A weighted cos plus sin of the same wave is one cosine with an amplitude and a phase, so</p>
-    <div class="eq"><i>y<sub>u</sub></i>(<i>x</i>) = &Sigma;<sub><i>i</i></sub> <i>a<sub>ui</sub></i> cos(<i>&omega;<sub>i</sub></i> &middot; <i>x</i> &minus; <i>&phi;<sub>ui</sub></i>), &nbsp; <i>a<sub>ui</sub></i>&sup2; = (<i>Q<sub>u,i</sub></i>&sup2; + <i>Q<sub>u,M+i</sub></i>&sup2;) / <i>M</i>, &nbsp; <i>&phi;<sub>ui</sub></i> = atan2(<i>Q<sub>u,M+i</sub></i>, <i>Q<sub>u,i</sub></i>)</div>
-    <p>All units share the same 512 frequencies. The rotation gives each unit its own amplitudes and phases. Without it a unit is a single wave and none of what follows applies. With it, the input <i class="v">y<sub>u</sub></i> is close to a Gaussian random function, scaled here to unit variance. Everything about it is in its correlation between two positions <i class="v">d</i> apart, which is the average of cos(<i class="v">&omega;</i> &middot; <i class="v">d</i>) over the frequency draw:</p>
-    <div class="eq"><i>&rho;</i>(<i>d</i>) = exp(&minus;<i>d</i>&sup2; / 2<i>r</i>&sup2;)</div>
-    <p>The threshold sets the share of units active, <i class="v">p</i> = 1 &minus; &Phi;(<i class="v">t</i>), and nothing else.</p>
+    <h2>The unit is a thresholded Gaussian random function</h2>
+    <p>The ideal code <i class="v">z</i> has a cos unit and a sin unit for each of <i class="v">M</i> = 512 waves, each scaled by 1/&radic;<i class="v">M</i>, with frequencies <i class="v">&omega;<sub>i</sub></i> ~ N(0, 1/<i class="v">r</i>&sup2;) per component. Unit <i class="v">u</i> of the rotated code takes row <i class="v">u</i> of the rotation <i class="v">Q</i> as its input and thresholds it:</p>
+    <div class="eq"><i>s<sub>u</sub></i>(<i>x</i>) = max(<i>y<sub>u</sub></i>(<i>x</i>) &minus; <i>t</i>, 0), &nbsp; <i>y<sub>u</sub></i>(<i>x</i>) = &radic;(2<i>M</i>) &Sigma;<sub><i>j</i></sub> <i>Q<sub>uj</sub></i> <i>z<sub>j</sub></i>(<i>x</i>)</div>
+    <p>Row <i class="v">u</i> puts one weight on the cos of wave <i class="v">i</i> and another on its sin. A weighted cos plus sin of the same wave is one cosine with an amplitude and a phase:</p>
+    <div class="eq"><i>y<sub>u</sub></i>(<i>x</i>) = &Sigma;<sub><i>i</i></sub> <i>a<sub>ui</sub></i> cos(<i>&omega;<sub>i</sub></i> &middot; <i>x</i> &minus; <i>&phi;<sub>ui</sub></i>), &nbsp; <i>a<sub>ui</sub></i>&sup2; = 2(<i>Q<sub>u,i</sub></i>&sup2; + <i>Q<sub>u,M+i</sub></i>&sup2;), &nbsp; <i>&phi;<sub>ui</sub></i> = atan2(<i>Q<sub>u,M+i</sub></i>, <i>Q<sub>u,i</sub></i>)</div>
+    <p>All units share the same 512 frequencies. The rotation gives each unit its own amplitudes and phases.</p>
 
-    <p><b>The kernel uses the whole of <i class="v">&rho;</i>.</b> Across units, the inputs at two positions are a pair of unit Gaussians with correlation <i class="v">&rho;</i>(<i class="v">d</i>). The similarity of the thresholded rates is a fixed increasing function of that correlation, the same at every separation:</p>
-    <div class="eq"><i>K</i>(<i>d</i>) = <i>F<sub>t</sub></i>(<i>&rho;</i>(<i>d</i>))</div>
-    <p>So the kernel falls to one half where <i class="v">&rho;</i> falls to a value <i class="v">&rho;</i>* that depends only on the threshold, and its full width there is</p>
-    <div class="eq">FW = 2<i>r</i> &radic;(2 ln(1/<i>&rho;</i>*))</div>
+    <p><b>Unit variance.</b> Over the scaffold, a cosine with a nonzero integer frequency averages to zero and its square to one half, and two cosines with different frequencies are uncorrelated. So the variance of <i class="v">y<sub>u</sub></i> over positions is &Sigma;<sub><i>i</i></sub> <i class="v">a<sub>ui</sub></i>&sup2;/2 = &Sigma;<sub><i>j</i></sub> <i class="v">Q<sub>uj</sub></i>&sup2; = 1, because a row of a rotation has unit length. The factor &radic;(2<i class="v">M</i>) in the definition is there for this.</p>
 
-    <p><b>The field uses only the curvature of <i class="v">&rho;</i> at zero.</b> A field is a stretch where <i class="v">y</i> is above a level <i class="v">u</i>. Rice's formula gives the number of upward crossings of <i class="v">u</i> per cell, and it depends on the input only through <i class="v">&lambda;</i><sub>2</sub> = &minus;<i class="v">&rho;</i>&Prime;(0), the mean squared slope of <i class="v">y</i>:</p>
-    <div class="eq"><i>&nu;</i>(<i>u</i>) = (&radic;<i>&lambda;</i><sub>2</sub> / 2&pi;) exp(&minus;<i>u</i>&sup2;/2)</div>
-    <p>The share of the track above <i class="v">u</i> is 1 &minus; &Phi;(<i class="v">u</i>). Mean field width is that share divided by the number of fields per cell:</p>
-    <div class="eq"><i>W</i> = (2&pi; / &radic;<i>&lambda;</i><sub>2</sub>) (1 &minus; &Phi;(<i>u</i>)) exp(<i>u</i>&sup2;/2)</div>
-
-    <p><b>For a Gaussian <i class="v">&rho;</i> the two are the same number.</b> Its curvature at zero is <i class="v">&lambda;</i><sub>2</sub> = 1/<i class="v">r</i>&sup2;, so <i class="v">W</i> = 2&pi;<i class="v">r</i> (1 &minus; &Phi;(<i class="v">u</i>)) exp(<i class="v">u</i>&sup2;/2). Both widths are <i class="v">r</i> times a constant that depends only on the threshold:</p>
+    <p><b>Why Gaussian.</b> Pick a position at random. Then <i class="v">y<sub>u</sub></i> is a sum of 512 terms, each a cosine of a different phase <i class="v">&omega;<sub>i</sub></i> &middot; <i class="v">x</i>. The terms are uncorrelated, and no term carries much of the variance: the largest wave's share is 1.3% for a typical unit and 2.6% at most. A sum of many small, nearly independent terms is close to Gaussian (the central limit theorem). The same argument applied to the pair (<i class="v">y<sub>u</sub></i>(<i class="v">x</i>), <i class="v">y<sub>u</sub></i>(<i class="v">x</i> + <i class="v">d</i>)) gives a joint Gaussian, which is what "Gaussian random function" means. The theorem needs the phases at different frequencies to behave independently, which I have not proved for this draw, so here is the check on 40,000 random positions and all 1,024 units:</p>
     <div class="scroll">
     <table class="small">
-      <thead><tr><th>share active <i>p</i></th><th><i>&rho;</i>*</th><th>kernel FW / <i>r</i></th><th>field <i>W</i> / <i>r</i></th><th><i>W</i> / FW</th></tr></thead>
+      <thead><tr><th>statistic</th><th>measured</th><th>Gaussian</th></tr></thead>
       <tbody>
-        <tr><td>0.5</td><td>0.57</td><td>2.11</td><td>2.26</td><td>1.07</td></tr>
-        <tr><td>0.1</td><td>0.72</td><td>1.64</td><td>1.28</td><td>0.78</td></tr>
-        <tr><td>0.02</td><td>0.80</td><td>1.34</td><td>0.94</td><td>0.70</td></tr>
+        <tr><td>share of positions above <i>t</i> = 0, 1.28, 2.05</td><td>0.5000, 0.1000, 0.0200</td><td>0.5000, 0.1000, 0.0200</td></tr>
+        <tr><td>excess kurtosis, mean over units</td><td>&minus;0.0066</td><td>0 (sum of 512 cosines: &minus;3/<i>M</i> = &minus;0.0059)</td></tr>
+        <tr><td>skewness, mean over units</td><td>0.0001</td><td>0</td></tr>
       </tbody>
     </table>
     </div>
-    <p class="foot">Pearson kernel. Field level <i class="v">u</i> is 20% of the way from the threshold to the unit's peak, as in the place-field literature. Measured values match these within 4%.</p>
-    <p>Changing <i class="v">r</i> scales both columns together. Changing the threshold moves the ratio only from 1.07 to 0.70, which is the factor of 1.5 that sparsity appeared to give for free. At high thresholds both widths shrink as <i class="v">r</i>/<i class="v">t</i>, so the ratio stops moving.</p>
-    <p>The way out is in the two formulas. The kernel depends on where <i class="v">&rho;</i> falls to <i class="v">&rho;</i>*, far from zero. The field depends on <i class="v">&lambda;</i><sub>2</sub>, the curvature at zero. In terms of the input's power spectrum <i class="v">S</i>(<i class="v">k</i>), <i class="v">&lambda;</i><sub>2</sub> = &int; <i class="v">k</i>&sup2; <i class="v">S</i>(<i class="v">k</i>) d<i class="v">k</i>. A Gaussian spectrum has one parameter for both. Any spectrum with a second, faster component can raise <i class="v">&lambda;</i><sub>2</sub> without moving the bulk of <i class="v">&rho;</i>.</p>
+
+    <p><b>Its correlation.</b> For one unit, the correlation between positions <i class="v">d</i> apart is &Sigma;<sub><i>i</i></sub> (<i class="v">a<sub>ui</sub></i>&sup2;/2) cos(<i class="v">&omega;<sub>i</sub></i> &middot; <i class="v">d</i>), a weighted average of cos(<i class="v">&omega;</i> &middot; <i class="v">d</i>) over the 512 frequencies. Its expectation over the frequency draw is the characteristic function of a Gaussian:</p>
+    <div class="eq"><i>&rho;</i>(<i>d</i>) = E cos(<i>&omega;</i> &middot; <i>d</i>) = exp(&minus;|<i>d</i>|&sup2; / 2<i>r</i>&sup2;)</div>
+    <p>A finite draw departs from this by about 1/&radic;<i class="v">M</i>. At 16 cells the units measure 0.799 &plusmn; 0.033 against 0.788, because this draw's kernel is 2% wider than its expectation.</p>
+
+    <p><b>This is the model of Mainali, Azeredo da Silveira and Burak (2025).</b> They model each CA1 cell as a thresholded, rectified sample of a Gaussian process, simulate it with a Gaussian correlation function, and justify the Gaussian by the same central limit argument for random projections. Their two parameters map onto ours exactly: their correlation length <i class="v">&sigma;</i> = &radic;(&minus;<i class="v">&rho;</i>(0)/<i class="v">&rho;</i>&Prime;(0)) is our <i class="v">r</i>, and their normalised threshold <i class="v">&theta;</i> is our <i class="v">t</i>. Our 10% active is <i class="v">&theta;</i> = 1.28; they infer <i class="v">&theta;</i> = 1.1 for bats in a 200 m tunnel. So the rotated and sparse ideal codes inherit their fit to field sizes, counts and shapes. Three things differ:</p>
+    <ul>
+      <li>Their cells are independent samples. Ours share 512 frequencies through one rotation, which is what makes the population kernel exact with only 1,024 units. I found no population-similarity analysis in their paper; the kernel follows from their model by the formula in the next section.</li>
+      <li>They fit <i class="v">&sigma;</i> and <i class="v">&theta;</i> separately for each dataset, and <i class="v">&sigma;</i> grows with the size of the environment. In our code <i class="v">r</i> is one fixed number.</li>
+      <li>They add a spread of thresholds across cells to explain why a cell's field count is correlated between the two flight directions. Our units all share one threshold, which is probably why the coding comparison found no code with Rich's overdispersed field counts.</li>
+    </ul>
   </section>
 
   <section>
-    <h2>How to separate them</h2>
-    <p>Add a second, faster component to each unit's input: 70% of the variance at the slow scale (r = 23.2 cells) and 30% at a fast scale (3 cells). The fast wiggle cuts each long above-threshold stretch into short pieces, so fields are small. The unit still fires mostly in the same broad region, because the slow part decides where the input is near threshold at all. Two positions 16 cells apart therefore still share many active units, and the kernel stays wide.</p>
-    <div class="fig">
-      <h3>One unit's input along 300 cells, with its fields</h3>
-      <div class="plot" id="u1"></div>
-      <div class="plot" id="u2"></div>
-      <div class="legend">
-        <span><i class="sw" style="border-color:var(--base)"></i>input, one scale</span>
-        <span><i class="sw" style="border-color:var(--s1)"></i>input, slow + 30% fast</span>
-        <span><i class="sw dash" style="border-color:var(--muted)"></i>threshold (10% active)</span>
-        <span><i class="sw box"></i>unit fires</span>
-      </div>
-      <div class="cap">Two different example units. The two-scale unit fires in several short fields grouped into broad regions.</div>
+    <h2>Why a wide kernel implies wide fields</h2>
+    <p><b>The kernel uses the whole of <i class="v">&rho;</i>.</b> Across units, the inputs at two positions are a pair of unit Gaussians with correlation <i class="v">&rho;</i>(<i class="v">d</i>). The Pearson similarity of the thresholded rates is a fixed increasing function of that correlation:</p>
+    <div class="eq"><i>K</i>(<i>d</i>) = <i>F<sub>t</sub></i>(<i>&rho;</i>(<i>d</i>))</div>
+    <p>It falls to one half where <i class="v">&rho;</i> falls to a value <i class="v">&rho;</i>* that depends only on the threshold. Solving exp(&minus;<i class="v">d</i>&sup2;/2<i class="v">r</i>&sup2;) = <i class="v">&rho;</i>* gives the full width</p>
+    <div class="eq">FW = 2<i>r</i> &radic;(2 ln(1/<i>&rho;</i>*))</div>
+    <p>Measured against predicted FW is 34.2 / 34.2, 38.4 / 38.5 and 29.6 / 29.6 cells on three codes.</p>
+
+    <p><b>The field uses only the curvature of <i class="v">&rho;</i> at zero.</b> Along a straight track, a field is a stretch where <i class="v">y</i> is above a level <i class="v">u</i>. Rice's formula gives the number of upward crossings of <i class="v">u</i> per cell. It depends on the input only through <i class="v">&lambda;</i><sub>2</sub> = &minus;<i class="v">&rho;</i>&Prime;(0), the mean squared slope of <i class="v">y</i>:</p>
+    <div class="eq"><i>&nu;</i>(<i>u</i>) = (&radic;<i>&lambda;</i><sub>2</sub> / 2&pi;) exp(&minus;<i>u</i>&sup2;/2)</div>
+    <p>The share of the track above <i class="v">u</i> is 1 &minus; &Phi;(<i class="v">u</i>). Mean field width is that share divided by the number of fields per cell of track:</p>
+    <div class="eq"><i>W</i> = (2&pi; / &radic;<i>&lambda;</i><sub>2</sub>) (1 &minus; &Phi;(<i>u</i>)) exp(<i>u</i>&sup2;/2)</div>
+
+    <p><b>For a Gaussian <i class="v">&rho;</i> both are multiples of <i class="v">r</i>.</b> Its curvature at zero is <i class="v">&lambda;</i><sub>2</sub> = 1/<i class="v">r</i>&sup2;, so <i class="v">W</i> = 2&pi;<i class="v">r</i> (1 &minus; &Phi;(<i class="v">u</i>)) exp(<i class="v">u</i>&sup2;/2).</p>
+    <div class="scroll">
+    <table class="small" style="max-width:680px">
+      <thead><tr><th>share active <i>p</i></th><th><i>&rho;</i>*</th><th>kernel FW / <i>r</i></th><th>field / <i>r</i>, cut at threshold</th><th>field / <i>r</i>, cut at 20% of peak</th><th>field / kernel</th></tr></thead>
+      <tbody>
+        <tr><td>0.5</td><td>0.574</td><td>2.11</td><td>3.14</td><td>2.26</td><td>1.49, 1.07</td></tr>
+        <tr><td>0.1</td><td>0.715</td><td>1.64</td><td>1.43</td><td>1.28</td><td>0.87, 0.78</td></tr>
+        <tr><td>0.02</td><td>0.799</td><td>1.34</td><td>1.03</td><td>0.94</td><td>0.77, 0.70</td></tr>
+        <tr><td>0.0001</td><td>0.903</td><td>0.90</td><td>0.63</td><td></td><td>0.70</td></tr>
+      </tbody>
+    </table>
     </div>
+    <p class="foot">"Cut at threshold" is the formula with <i class="v">u</i> = <i class="v">t</i>. "Cut at 20% of peak" is the rule the place-field literature uses, measured on Gaussian-random-field samples along 1716-cell loops at <i class="v">r</i> = 32; its level sits above the threshold and depends weakly on track length through each unit's peak. The formula with that level gives 2.28, 1.31 and 1.01.</p>
+    <p>Changing <i class="v">r</i> scales the kernel and the field together. Changing the threshold moves their ratio slowly: from 50% to 2% active it changes by a factor of 1.5 under the 20% rule, and it is still 0.70 at 0.01% active under the threshold cut. So in this family a field is never much narrower than about 0.7 of the kernel. At the kernel the memory uses, 38 cells, that is fields of about 30 cells, or 2.5 grid periods.</p>
+    <p>The underlying reason does not depend on the family. The kernel is the average of each unit's overlap with a shifted copy of itself. A kernel that is still 0.6 at 16 cells means a unit firing here is usually also firing 16 cells away.</p>
+  </section>
+
+  <section>
+    <h2>The one way around it, and why it is not compelling</h2>
+    <p>The two formulas read different parts of <i class="v">&rho;</i>: the kernel reads where it falls to <i class="v">&rho;</i>*, the field reads its curvature at zero. A second, faster component in the input changes the curvature without moving the rest. With a slow share 1 &minus; <i class="v">a</i> at scale <i class="v">R</i> and a fast share <i class="v">a</i> at scale <i class="v">r<sub>s</sub></i>:</p>
+    <div class="eq"><i>&rho;</i>(<i>d</i>) = (1 &minus; <i>a</i>) exp(&minus;<i>d</i>&sup2;/2<i>R</i>&sup2;) + <i>a</i> exp(&minus;<i>d</i>&sup2;/2<i>r<sub>s</sub></i>&sup2;), &nbsp; <i>&lambda;</i><sub>2</sub> = (1 &minus; <i>a</i>)/<i>R</i>&sup2; + <i>a</i>/<i>r<sub>s</sub></i>&sup2;</div>
+    <p>The fast term dominates <i class="v">&lambda;</i><sub>2</sub> once <i class="v">a</i>/(1 &minus; <i class="v">a</i>) exceeds (<i class="v">r<sub>s</sub></i>/<i class="v">R</i>)&sup2;, about 2% for <i class="v">R</i> = 23.2 and <i class="v">r<sub>s</sub></i> = 3. At <i class="v">a</i> = 0.3 the length 1/&radic;<i class="v">&lambda;</i><sub>2</sub> is 5.4 cells against 23.2, and the measured field width falls from 30 to 8 cells. Beyond a few cells <i class="v">&rho;</i> is the slow term scaled by 1 &minus; <i class="v">a</i>. The rate kernel loses more than that, because <i class="v">F<sub>t</sub></i> is convex: at 16 cells it goes from 0.61 to 0.32 at a 30% fast share.</p>
+    <div class="two">
+      <div class="fig">
+        <h3>The kernel stays wide below its peak</h3>
+        <div class="plot" id="k"></div>
+        <div class="legend">
+          <span><i class="sw" style="border-color:var(--base)"></i>one scale, r 23.2 (fields 30)</span>
+          <span><i class="sw" style="border-color:var(--s1)"></i>30% fast (fields 8)</span>
+          <span><i class="sw" style="border-color:var(--s2)"></i>50% fast (fields 6)</span>
+          <span><i class="sw dash" style="border-color:var(--s3)"></i>one scale, r 4.2 (fields 6)</span>
+        </div>
+        <div class="cap">Population similarity (Pearson) against separation in cells.</div>
+      </div>
+      <div class="fig">
+        <h3>Field width against the fast share</h3>
+        <div class="plot" id="w"></div>
+        <div class="legend">
+          <span><i class="sw" style="border-color:var(--s1)"></i>fast waves, scale 3 cells</span>
+          <span><i class="sw" style="border-color:var(--s2)"></i>direct grid input</span>
+        </div>
+        <div class="cap">Mean field width in grid periods (log scale), fields cut at 20% of peak. Band: mouse dorsal CA1.</div>
+      </div>
+    </div>
+    <p><b>What the units look like.</b> The same four units as the fast share rises. They are the wide fields, broken up.</p>
     <div class="fig">
       <h3>The same four units as the fast share rises</h3>
       <div class="scroll"><div class="maps">
@@ -165,54 +206,26 @@ table.small { min-width: 420px; max-width: 560px; }
       </div></div>
       <div class="cap">Rate maps in an 80-cell square arena (6.7 grid periods a side), 10% of units active, each map scaled to its own peak. Darker is a higher rate. A unit's slow input is the same in every column and only the fast share changes. At 5 to 10% the unit keeps its outline and gains texture. By 30 to 50% it breaks into separate small fields inside the same region. "Field" is the population's mean field width in grid periods, where a field is a connected patch above 20% of the unit's peak.</div>
     </div>
-    <p>With a slow share 1 &minus; <i class="v">a</i> at scale <i class="v">R</i> and a fast share <i class="v">a</i> at scale <i class="v">r<sub>s</sub></i>, the two formulas above become</p>
-    <div class="eq"><i>&rho;</i>(<i>d</i>) = (1 &minus; <i>a</i>) exp(&minus;<i>d</i>&sup2;/2<i>R</i>&sup2;) + <i>a</i> exp(&minus;<i>d</i>&sup2;/2<i>r<sub>s</sub></i>&sup2;), &nbsp; <i>&lambda;</i><sub>2</sub> = (1 &minus; <i>a</i>)/<i>R</i>&sup2; + <i>a</i>/<i>r<sub>s</sub></i>&sup2;</div>
-    <p>The fast term dominates <i class="v">&lambda;</i><sub>2</sub> once <i class="v">a</i> exceeds (<i class="v">r<sub>s</sub></i>/<i class="v">R</i>)&sup2;, about 2% here, so fields shrink quickly. Beyond a few cells <i class="v">&rho;</i> is the slow term alone, scaled by 1 &minus; <i class="v">a</i>, so the kernel only loses height in proportion to the fast share. At <i class="v">a</i> = 0.3 and <i class="v">r<sub>s</sub></i> = 3 the formula gives 1/&radic;<i class="v">&lambda;</i><sub>2</sub> = 5.4 cells against 23.2, and the measured field width falls from 30 to 8 cells.</p>
-    <div class="two">
-      <div class="fig">
-        <h3>The kernel stays wide below its peak</h3>
-        <div class="plot" id="k"></div>
-        <div class="legend">
-          <span><i class="sw" style="border-color:var(--base)"></i>one scale, r 23.2 (fields 30)</span>
-          <span><i class="sw" style="border-color:var(--s1)"></i>30% fast (fields 8)</span>
-          <span><i class="sw" style="border-color:var(--s2)"></i>50% fast (fields 6)</span>
-          <span><i class="sw dash" style="border-color:var(--s3)"></i>one scale, r 4.2 (fields 6)</span>
-        </div>
-        <div class="cap">Population similarity (Pearson) against separation. The dashed code has the same small fields from one scale, and its kernel is gone by 10 cells.</div>
+    <div class="fig">
+      <h3>One unit's input along 300 cells, with its fields</h3>
+      <div class="plot" id="u1"></div>
+      <div class="plot" id="u2"></div>
+      <div class="legend">
+        <span><i class="sw" style="border-color:var(--base)"></i>input, one scale</span>
+        <span><i class="sw" style="border-color:var(--s1)"></i>input, slow + 30% fast</span>
+        <span><i class="sw dash" style="border-color:var(--muted)"></i>threshold (10% active)</span>
+        <span><i class="sw box"></i>unit fires</span>
       </div>
-      <div class="fig">
-        <h3>Field width against the fast share</h3>
-        <div class="plot" id="w"></div>
-        <div class="legend">
-          <span><i class="sw" style="border-color:var(--s1)"></i>fast waves, scale 3 cells</span>
-          <span><i class="sw" style="border-color:var(--s2)"></i>direct grid input</span>
-        </div>
-        <div class="cap">Mean field width in grid periods (log scale). Band: mouse dorsal CA1.</div>
-      </div>
+      <div class="cap">Two different example units.</div>
     </div>
-    <p>The kernel's shape changes: a narrow peak sits on a wide base. Its half-height width is no longer a useful number, because the narrow peak crosses one half while the base is still there. The numbers to read are the similarity at 16 and 32 cells.</p>
-  </section>
-
-  <section>
-    <h2>What it does to the memory</h2>
-    <p>Retrieval is unchanged. Exact retrieval stays at 1.000 and the basin at 31 to 36 cells for the two-scale codes. The single-scale code with the same small fields retrieves 0.54 with a basin of 6.5. So the wide base of the kernel does the work the memory needs.</p>
-    <p>The direction readout degrades, for two separate reasons. The agent reads direction by projecting the recalled pattern minus the current code onto the change in the code over a one-cell step. A code with small fields changes a lot per cell.</p>
+    <p><b>Why this is not a real escape.</b></p>
     <ul>
-      <li><b>Bias.</b> With a forward step, the current code itself has a fixed projection on that change, equal to minus half its size on each axis. It pushes every estimate the same way and grows as fields shrink. With a 5% fast share the error is 41&deg;, 42&deg; and 42&deg; at 1024, 4096 and 8192 units, so units do not help. A centred step, one cell each side, has no such term.</li>
-      <li><b>Noise.</b> The slope of the similarity toward the goal is the same as before, but the chance fluctuations in similarity now vary over a few cells instead of over 20. A one-cell difference picks those up. They average out over units, so the error falls as about 1/&radic;units, and holding it fixed needs units in proportion to about 1/W&sup2;. Reading over &plusmn;4 cells instead of &plusmn;1 lowers it further.</li>
+      <li><b>The firing region is unchanged.</b> Each unit still fires across a region the width of the kernel. Only the filling changes, from solid to patchy.</li>
+      <li><b>A recording would agree with the picture.</b> With Poisson spikes at a 10 Hz peak, 1 s per cell and one cell of smoothing, a 5% fast share reads as 1.4 fields of 12 cells: one large textured field. At 50% the patches do survive as separate fields (6.8 cells recorded against 6.4 true), but they sit clustered in one region.</li>
+      <li><b>The clustering is the only signature, and recordings do not show it.</b> By field size and count the 50% code and a single-scale small-field code are the same (6.8 cells and about 2.4 fields per unit each). They differ only in whether a cell's fields are clustered. Rich 2014 reports a cell's fields placed at random on a 48 m track, and Mainali 2025 find the gaps between a cell's fields consistent with a Gaussian process that has one correlation length.</li>
+      <li><b>It costs units in the direction readout.</b> The readout takes a one-cell difference of the similarity, and a code with small patches changes a lot per cell. With a centred difference the error falls as about 1/&radic;units, so holding it fixed needs units in proportion to about 1/<i class="v">W</i>&sup2; (a fit over 92 codes, exponent 1.1 to 1.25 on 1/(<i class="v">W</i>&radic;<i class="v">D</i>)). Production's forward difference adds a bias that units do not remove: 41&deg;, 42&deg; and 42&deg; at 1024, 4096 and 8192 units for a 5% fast share. The bias comes from projecting recalled minus current onto the code's change over one step, where the current code's own projection is minus half the step's length, exactly on the first axis and nearly on the second.</li>
+      <li><b>The fast input cannot be the grid code itself.</b> A sum of inputs from modules with periods 11, 12 and 13 has no wavelength above 13 cells and partly repeats every period. Smoothing leaves each module mostly its first harmonic (77% of its power at the production width), so a random projection correlates 0.84 with itself 12 cells away. As a fast input its ripple gives the readout a slope error that units do not average away: reach 0.55 at a 10% share with 4096 units.</li>
     </ul>
-  </section>
-
-  <section>
-    <h2>Why the fast input cannot be the grid code itself</h2>
-    <p>The simplest fast input would be a random projection of the grid cells. It does shrink fields (orange line above). It fails in the readout, because a sum of inputs from modules with periods 11, 12 and 13 has no wavelength longer than 13 cells and partly repeats every grid period. That repeat puts a ripple in the similarity to the goal, and a 12-cell ripple has a slope as large as the wide base's. Unlike noise, it is the same for every unit count.</p>
-    <p>The same fact explains why a random projection of the smoothed grid code gives a periodic place code. Smoothing leaves each module almost only its first harmonic (77% of its power at the production width), so the projection is close to three sine waves and correlates 0.84 with itself 12 cells away.</p>
-    <p>So both scales have to be built from products across modules, which is what the grid wave network already does for any wave.</p>
-  </section>
-
-  <section>
-    <h2>Navigation probe</h2>
-    <p>Error is the mean angle between the read-out direction and the true one. Basin is the radius within which a cue retrieves the goal exactly. Reach is the share of walks that arrive.</p>
     <div class="scroll">
     <table>
       <thead><tr><th>code</th><th>field / grid period</th><th>units</th><th>readout</th><th>error</th><th>basin</th><th>reach</th></tr></thead>
@@ -220,32 +233,28 @@ table.small { min-width: 420px; max-width: 560px; }
         <tr><td>baseline, one scale</td><td>2.51</td><td>1024</td><td>forward</td><td>4.8&deg;</td><td>28.4</td><td>0.996</td></tr>
         <tr><td>5% fast</td><td>1.17</td><td>4096</td><td>forward</td><td>41.6&deg;</td><td>42.0</td><td>0.438</td></tr>
         <tr><td>5% fast</td><td>1.17</td><td>4096</td><td>centred &plusmn;1</td><td>9.6&deg;</td><td>42.0</td><td>0.993</td></tr>
-        <tr class="hl"><td>30% fast</td><td>0.67</td><td>4096</td><td>centred &plusmn;4</td><td>14.7&deg;</td><td>35.9</td><td>0.976</td></tr>
-        <tr><td>50% fast</td><td>0.52</td><td>4096</td><td>centred &plusmn;4</td><td>31.9&deg;</td><td>30.8</td><td>0.807</td></tr>
-        <tr class="hl"><td>50% fast</td><td>0.52</td><td>8192</td><td>centred &plusmn;4</td><td>23.4&deg;</td><td>35.0</td><td>0.875</td></tr>
+        <tr><td>30% fast</td><td>0.67</td><td>4096</td><td>centred &plusmn;4</td><td>14.7&deg;</td><td>35.9</td><td>0.976</td></tr>
+        <tr><td>50% fast</td><td>0.52</td><td>8192</td><td>centred &plusmn;4</td><td>23.4&deg;</td><td>35.0</td><td>0.875</td></tr>
         <tr><td>one scale, r 4.2</td><td>0.50</td><td>4096</td><td>centred &plusmn;1</td><td>51.3&deg;</td><td>7.4</td><td>0.569</td></tr>
         <tr><td>10% direct grid input</td><td>0.77</td><td>4096</td><td>centred &plusmn;1</td><td>30.5&deg;</td><td>39.3</td><td>0.554</td></tr>
       </tbody>
     </table>
     </div>
-    <p class="foot">Hebbian storage, five stored goals, one recall step, 20-cell arenas, 10% of units active. Fast waves at scale 3 cells except the 5% rows (scale 2).</p>
+    <p class="foot">Navigation probe: Hebbian storage, five stored goals, one recall step, 20-cell arenas, 10% of units active. Error is the mean angle between the read-out and true direction, basin the radius within which a cue retrieves the goal exactly, reach the share of walks that arrive. Retrieval is unaffected by the fast input (basin 35 to 42); the single-scale small-field code loses it (7.4).</p>
   </section>
 
   <section>
-    <h2>Where the mouse target stands</h2>
-    <p>Fields of 0.67 grid periods work at 4096 units. Fields of 0.52 reach 0.875 at 8192 units. By the unit law, matching the baseline's direction error at 0.5 needs roughly 16k to 32k units. That last number is an extrapolation.</p>
-    <p>Smaller fields mean more of them, because the threshold fixes how much of the arena a unit covers. In a 20-cell arena the mouse-sized code has 49% of units active and 1.55 fields per active unit, against 22% and 1.00 for the baseline.</p>
+    <h2>What this predicts</h2>
+    <p>The population the memory reads has fields about as wide as its kernel: 0.7 to 1.1 kernel widths under the 20% rule. A kernel wide enough for navigation over tens of cells means fields a few grid periods wide. Kjelstrup 2008 found fields and population correlations of that scale in intermediate and ventral CA3. Mainali's fitted correlation lengths give a second test, because with their <i class="v">&sigma;</i> and <i class="v">&theta;</i> the kernel width follows from the formula above without any population recording. I have not done that calculation.</p>
   </section>
 
   <section>
-    <h2>Not done</h2>
-    <ul>
-      <li>Building the two-scale code in the grid wave network. A second population with faster depression is the obvious construction.</li>
-      <li>16k to 32k units on the real probe.</li>
-      <li>The RL controller on these codes. It may tolerate a noisier direction signal than the greedy probe walk.</li>
-      <li>Whether to change the production readout to a centred difference. The forward-difference bias is in the agent's readout, so any small-field encoder will have it there.</li>
-    </ul>
-    <p class="foot">Branch <code>worktree-field-kernel-tradeoff</code>, write-up <code>docs/EXPERIMENTS_FIELD_KERNEL.md</code>. One frequency seed per code.</p>
+    <h2>Possible next step: two populations</h2>
+    <p>Give some cells only the fast input, so they have small scattered fields, and the rest only the slow input, so they have wide fields. No single cell then has clustered fields, and the population kernel is still a narrow peak on a wide base. The memory would store all of them and read direction from the wide-field cells alone, which makes the first group dorsal-like and the second ventral-like. This has not been run. The nearest arm I ran used grid-driven cells as the small-field group and the biased forward readout, so it does not test it.</p>
+  </section>
+
+  <section>
+    <p class="foot">Branch <code>worktree-field-kernel-tradeoff</code>, write-up <code>docs/EXPERIMENTS_FIELD_KERNEL.md</code>. One frequency seed per code. Mainali, Azeredo da Silveira and Burak (2025), Neuron 113, 1110.</p>
   </section>
 </div>
 
