@@ -51,6 +51,9 @@ tr.hl td { background: var(--panel); font-weight: 500; }
 ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; max-width: 68ch; }
 code { font-size: .85em; background: var(--panel); padding: 1px 5px; border-radius: 4px; }
 .foot { color: var(--fg2); font-size: .85rem; }
+.eq { font-family: "STIX Two Text", Georgia, "Times New Roman", serif; font-size: 1.08rem; padding: 4px 0 4px 18px; border-left: 2px solid var(--rule); overflow-x: auto; white-space: nowrap; }
+.eq i, p i.v { font-family: "STIX Two Text", Georgia, "Times New Roman", serif; }
+table.small { min-width: 420px; max-width: 560px; }
 </style>
 
 <div class="wrap">
@@ -71,8 +74,36 @@ code { font-size: .85em; background: var(--panel); padding: 1px 5px; border-radi
 
   <section>
     <h2>Why they are tied in the current code</h2>
-    <p>A unit of the rotated ideal code is a threshold on a smooth random input. That input has one length scale, r. A field is a stretch where the input is above threshold, so its width is a fixed multiple of r. Two positions share active units when the input has not changed much between them, which also happens over a fixed multiple of r. Both widths are r times a constant.</p>
-    <p>Raising the threshold changes the two constants by different amounts, which is why sparsity seemed to shrink fields for free. The effect is limited: from 50% active to 2% active, fields shrink by at most 1.5 times at a fixed kernel width.</p>
+    <p><b>The unit.</b> A unit of the rotated ideal code is a threshold on a random sum of the code's waves:</p>
+    <div class="eq"><i>s</i>(<i>x</i>) = max(<i>y</i>(<i>x</i>) &minus; <i>t</i>, 0), &nbsp; <i>y</i>(<i>x</i>) = &Sigma;<sub><i>i</i></sub> <i>a<sub>i</sub></i> cos(<i>&omega;<sub>i</sub></i> &middot; <i>x</i> + <i>&phi;<sub>i</sub></i>), &nbsp; <i>&omega;<sub>i</sub></i> ~ N(0, 1/<i>r</i>&sup2;)</div>
+    <p>With 512 waves the input <i class="v">y</i> is close to a Gaussian random function with unit variance. Everything about it is in its correlation between two positions <i class="v">d</i> apart, which is the average of cos(<i class="v">&omega;</i> &middot; <i class="v">d</i>) over the frequency draw:</p>
+    <div class="eq"><i>&rho;</i>(<i>d</i>) = exp(&minus;<i>d</i>&sup2; / 2<i>r</i>&sup2;)</div>
+    <p>The threshold sets the share of units active, <i class="v">p</i> = 1 &minus; &Phi;(<i class="v">t</i>), and nothing else.</p>
+
+    <p><b>The kernel uses the whole of <i class="v">&rho;</i>.</b> Across units, the inputs at two positions are a pair of unit Gaussians with correlation <i class="v">&rho;</i>(<i class="v">d</i>). The similarity of the thresholded rates is a fixed increasing function of that correlation, the same at every separation:</p>
+    <div class="eq"><i>K</i>(<i>d</i>) = <i>F<sub>t</sub></i>(<i>&rho;</i>(<i>d</i>))</div>
+    <p>So the kernel falls to one half where <i class="v">&rho;</i> falls to a value <i class="v">&rho;</i>* that depends only on the threshold, and its full width there is</p>
+    <div class="eq">FW = 2<i>r</i> &radic;(2 ln(1/<i>&rho;</i>*))</div>
+
+    <p><b>The field uses only the curvature of <i class="v">&rho;</i> at zero.</b> A field is a stretch where <i class="v">y</i> is above a level <i class="v">u</i>. Rice's formula gives the number of upward crossings of <i class="v">u</i> per cell, and it depends on the input only through <i class="v">&lambda;</i><sub>2</sub> = &minus;<i class="v">&rho;</i>&Prime;(0), the mean squared slope of <i class="v">y</i>:</p>
+    <div class="eq"><i>&nu;</i>(<i>u</i>) = (&radic;<i>&lambda;</i><sub>2</sub> / 2&pi;) exp(&minus;<i>u</i>&sup2;/2)</div>
+    <p>The share of the track above <i class="v">u</i> is 1 &minus; &Phi;(<i class="v">u</i>). Mean field width is that share divided by the number of fields per cell:</p>
+    <div class="eq"><i>W</i> = (2&pi; / &radic;<i>&lambda;</i><sub>2</sub>) (1 &minus; &Phi;(<i>u</i>)) exp(<i>u</i>&sup2;/2)</div>
+
+    <p><b>For a Gaussian <i class="v">&rho;</i> the two are the same number.</b> Its curvature at zero is <i class="v">&lambda;</i><sub>2</sub> = 1/<i class="v">r</i>&sup2;, so <i class="v">W</i> = 2&pi;<i class="v">r</i> (1 &minus; &Phi;(<i class="v">u</i>)) exp(<i class="v">u</i>&sup2;/2). Both widths are <i class="v">r</i> times a constant that depends only on the threshold:</p>
+    <div class="scroll">
+    <table class="small">
+      <thead><tr><th>share active <i>p</i></th><th><i>&rho;</i>*</th><th>kernel FW / <i>r</i></th><th>field <i>W</i> / <i>r</i></th><th><i>W</i> / FW</th></tr></thead>
+      <tbody>
+        <tr><td>0.5</td><td>0.57</td><td>2.11</td><td>2.26</td><td>1.07</td></tr>
+        <tr><td>0.1</td><td>0.72</td><td>1.64</td><td>1.28</td><td>0.78</td></tr>
+        <tr><td>0.02</td><td>0.80</td><td>1.34</td><td>0.94</td><td>0.70</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="foot">Pearson kernel. Field level <i class="v">u</i> is 20% of the way from the threshold to the unit's peak, as in the place-field literature. Measured values match these within 4%.</p>
+    <p>Changing <i class="v">r</i> scales both columns together. Changing the threshold moves the ratio only from 1.07 to 0.70, which is the factor of 1.5 that sparsity appeared to give for free. At high thresholds both widths shrink as <i class="v">r</i>/<i class="v">t</i>, so the ratio stops moving.</p>
+    <p>The way out is in the two formulas. The kernel depends on where <i class="v">&rho;</i> falls to <i class="v">&rho;</i>*, far from zero. The field depends on <i class="v">&lambda;</i><sub>2</sub>, the curvature at zero. In terms of the input's power spectrum <i class="v">S</i>(<i class="v">k</i>), <i class="v">&lambda;</i><sub>2</sub> = &int; <i class="v">k</i>&sup2; <i class="v">S</i>(<i class="v">k</i>) d<i class="v">k</i>. A Gaussian spectrum has one parameter for both. Any spectrum with a second, faster component can raise <i class="v">&lambda;</i><sub>2</sub> without moving the bulk of <i class="v">&rho;</i>.</p>
   </section>
 
   <section>
@@ -90,7 +121,9 @@ code { font-size: .85em; background: var(--panel); padding: 1px 5px; border-radi
       </div>
       <div class="cap">Two different example units. The two-scale unit fires in several short fields grouped into broad regions.</div>
     </div>
-    <p>In terms of the spectrum: the kernel is set by where most of the input's power sits, and field width is set by the second moment, which weights fast components by the square of their frequency. A fast share above about 2% already dominates the second moment, while the kernel only loses height in proportion to the share.</p>
+    <p>With a slow share 1 &minus; <i class="v">a</i> at scale <i class="v">R</i> and a fast share <i class="v">a</i> at scale <i class="v">r<sub>s</sub></i>, the two formulas above become</p>
+    <div class="eq"><i>&rho;</i>(<i>d</i>) = (1 &minus; <i>a</i>) exp(&minus;<i>d</i>&sup2;/2<i>R</i>&sup2;) + <i>a</i> exp(&minus;<i>d</i>&sup2;/2<i>r<sub>s</sub></i>&sup2;), &nbsp; <i>&lambda;</i><sub>2</sub> = (1 &minus; <i>a</i>)/<i>R</i>&sup2; + <i>a</i>/<i>r<sub>s</sub></i>&sup2;</div>
+    <p>The fast term dominates <i class="v">&lambda;</i><sub>2</sub> once <i class="v">a</i> exceeds (<i class="v">r<sub>s</sub></i>/<i class="v">R</i>)&sup2;, about 2% here, so fields shrink quickly. Beyond a few cells <i class="v">&rho;</i> is the slow term alone, scaled by 1 &minus; <i class="v">a</i>, so the kernel only loses height in proportion to the fast share. At <i class="v">a</i> = 0.3 and <i class="v">r<sub>s</sub></i> = 3 the formula gives 1/&radic;<i class="v">&lambda;</i><sub>2</sub> = 5.4 cells against 23.2, and the measured field width falls from 30 to 8 cells.</p>
     <div class="two">
       <div class="fig">
         <h3>The kernel stays wide below its peak</h3>
