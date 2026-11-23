@@ -74,9 +74,11 @@ table.small { min-width: 420px; max-width: 560px; }
 
   <section>
     <h2>Why they are tied in the current code</h2>
-    <p><b>The unit.</b> A unit of the rotated ideal code is a threshold on a random sum of the code's waves:</p>
-    <div class="eq"><i>s</i>(<i>x</i>) = max(<i>y</i>(<i>x</i>) &minus; <i>t</i>, 0), &nbsp; <i>y</i>(<i>x</i>) = &Sigma;<sub><i>i</i></sub> <i>a<sub>i</sub></i> cos(<i>&omega;<sub>i</sub></i> &middot; <i>x</i> + <i>&phi;<sub>i</sub></i>), &nbsp; <i>&omega;<sub>i</sub></i> ~ N(0, 1/<i>r</i>&sup2;)</div>
-    <p>With 512 waves the input <i class="v">y</i> is close to a Gaussian random function with unit variance. Everything about it is in its correlation between two positions <i class="v">d</i> apart, which is the average of cos(<i class="v">&omega;</i> &middot; <i class="v">d</i>) over the frequency draw:</p>
+    <p><b>The unit.</b> The ideal code <i class="v">z</i> has a cos unit and a sin unit for each of <i class="v">M</i> = 512 waves, with frequencies <i class="v">&omega;<sub>i</sub></i> ~ N(0, 1/<i class="v">r</i>&sup2;). Unit <i class="v">u</i> of the rotated code takes row <i class="v">u</i> of the rotation <i class="v">Q</i> as its input and thresholds it:</p>
+    <div class="eq"><i>s<sub>u</sub></i>(<i>x</i>) = max(<i>y<sub>u</sub></i>(<i>x</i>) &minus; <i>t</i>, 0), &nbsp; <i>y<sub>u</sub></i>(<i>x</i>) = &Sigma;<sub><i>j</i></sub> <i>Q<sub>uj</sub></i> <i>z<sub>j</sub></i>(<i>x</i>)</div>
+    <p>Row <i class="v">u</i> puts one weight on the cos of wave <i class="v">i</i> and another on its sin. A weighted cos plus sin of the same wave is one cosine with an amplitude and a phase, so</p>
+    <div class="eq"><i>y<sub>u</sub></i>(<i>x</i>) = &Sigma;<sub><i>i</i></sub> <i>a<sub>ui</sub></i> cos(<i>&omega;<sub>i</sub></i> &middot; <i>x</i> &minus; <i>&phi;<sub>ui</sub></i>), &nbsp; <i>a<sub>ui</sub></i>&sup2; = (<i>Q<sub>u,i</sub></i>&sup2; + <i>Q<sub>u,M+i</sub></i>&sup2;) / <i>M</i>, &nbsp; <i>&phi;<sub>ui</sub></i> = atan2(<i>Q<sub>u,M+i</sub></i>, <i>Q<sub>u,i</sub></i>)</div>
+    <p>All units share the same 512 frequencies. The rotation gives each unit its own amplitudes and phases. Without it a unit is a single wave and none of what follows applies. With it, the input <i class="v">y<sub>u</sub></i> is close to a Gaussian random function, scaled here to unit variance. Everything about it is in its correlation between two positions <i class="v">d</i> apart, which is the average of cos(<i class="v">&omega;</i> &middot; <i class="v">d</i>) over the frequency draw:</p>
     <div class="eq"><i>&rho;</i>(<i>d</i>) = exp(&minus;<i>d</i>&sup2; / 2<i>r</i>&sup2;)</div>
     <p>The threshold sets the share of units active, <i class="v">p</i> = 1 &minus; &Phi;(<i class="v">t</i>), and nothing else.</p>
 
