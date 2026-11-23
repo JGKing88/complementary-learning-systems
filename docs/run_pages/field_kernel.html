@@ -1,0 +1,187 @@
+<title>Small Fields, Wide Kernel</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+/* layout: one reading column, answer first, two small charts side by side, one results table */
+:root {
+  --bg: #fcfcfb; --panel: #f3f2ee; --fg: #0b0b0b; --fg2: #52514e; --muted: #8a887f; --rule: #dedcd4;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --base: #52514e; --band: #f6e3c4;
+  --display: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --body: Inter, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #1a1a19; --panel: #242422; --fg: #f0efec; --fg2: #c3c2b7; --muted: #8f8e85; --rule: #3a3a36;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --base: #c3c2b7; --band: #4a3c22; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #1a1a19; --panel: #242422; --fg: #f0efec; --fg2: #c3c2b7; --muted: #8f8e85; --rule: #3a3a36;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --base: #c3c2b7; --band: #4a3c22; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.55; }
+.wrap { max-width: 860px; margin: 0 auto; padding-block: 40px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 36px; }
+h1 { font-family: var(--display); font-size: 2rem; line-height: 1.15; margin: 0; text-wrap: balance; font-weight: 600; }
+h2 { font-family: var(--display); font-size: 1.15rem; margin: 0 0 10px; font-weight: 600; text-wrap: balance; }
+p { margin: 0; max-width: 66ch; }
+.kicker { color: var(--muted); font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 10px; }
+.lede { font-size: 1.12rem; color: var(--fg); margin-top: 14px; }
+.answer { border-left: 3px solid var(--s1); padding-left: 16px; display: flex; flex-direction: column; gap: 8px; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
+.chart { min-width: 0; }
+.chart h3 { font-size: .95rem; margin: 0 0 2px; font-weight: 600; }
+.chart .sub { color: var(--fg2); font-size: .82rem; margin-bottom: 8px; }
+svg { width: 100%; height: auto; display: block; overflow: visible; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .8rem; color: var(--fg2); margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 0; border-top: 2px solid; display: inline-block; }
+.sw.dash { border-top-style: dashed; }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
+  padding: 6px 9px; font-size: .78rem; color: var(--fg); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.plot { position: relative; }
+ol.points { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 12px; max-width: 68ch; }
+ol.points b { font-weight: 600; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .88rem; font-variant-numeric: tabular-nums; min-width: 560px; }
+th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--rule); }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--fg2); font-weight: 500; font-size: .78rem; }
+tr.hl td { background: var(--panel); font-weight: 500; }
+.note { color: var(--fg2); font-size: .85rem; }
+ul.open { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; max-width: 68ch; }
+code { font-size: .85em; background: var(--panel); padding: 1px 5px; border-radius: 4px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="kicker">Ideal encoder &middot; field width against kernel width &middot; 2026-11-21</div>
+    <h1>Can a code have small place fields and a wide kernel?</h1>
+    <p class="lede">Yes. Field width and kernel width are two different moments of one spectrum. Give each unit a slow input and a fast input before the threshold and they separate. The memory keeps working. The direction readout is what pays.</p>
+  </header>
+
+  <section class="charts">
+    <div class="chart">
+      <h3>The kernel keeps its shoulder</h3>
+      <div class="sub">Population similarity (Pearson) against separation in cells. 10% of units active.</div>
+      <div class="plot" id="k"></div>
+      <div class="legend">
+        <span><i class="sw" style="border-color:var(--base)"></i>one scale, r 23.2 (fields 30 cells)</span>
+        <span><i class="sw" style="border-color:var(--s1)"></i>two scales, 30% fast (fields 8)</span>
+        <span><i class="sw" style="border-color:var(--s2)"></i>two scales, 50% fast (fields 6)</span>
+        <span><i class="sw dash" style="border-color:var(--s3)"></i>one scale, r 4.2 (fields 6)</span>
+      </div>
+    </div>
+    <div class="chart">
+      <h3>A little fast input shrinks fields a lot</h3>
+      <div class="sub">Mean field width in grid periods against the fast share of input variance. Band: mouse dorsal CA1.</div>
+      <div class="plot" id="w"></div>
+      <div class="legend">
+        <span><i class="sw" style="border-color:var(--s1)"></i>fast waves, scale 3 cells</span>
+        <span><i class="sw" style="border-color:var(--s2)"></i>direct grid input</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What I found</h2>
+    <ol class="points">
+      <li><b>The kernel is fixed by the input's correlation and the threshold.</b> Predicted and measured widths agree on five different spectra (for example 38.5 against 38.4 cells).</li>
+      <li><b>Field width follows the spectrum's second moment.</b> A fast share above about 2% already dominates it, while the kernel's shoulder only falls in proportion to the slow share. With one scale the two are locked, and sparsity alone buys at most 1.5&times; smaller fields.</li>
+      <li><b>The memory does not care.</b> Exact retrieval stays at 1.000 and the basin at 31 to 36 cells. A single-scale code with the same small fields retrieves 0.54 with a basin of 6.5.</li>
+      <li><b>The direction readout pays twice.</b> Production's forward one-cell difference has a bias that grows as fields shrink: 41&deg;, 42&deg; and 42&deg; at 1024, 4096 and 8192 units. A centred difference removes it. What remains is noise that falls as about 1/&radic;units, so units needed grow as about 1/W&sup2;.</li>
+      <li><b>The fast input cannot come straight from the grid code.</b> A linear readout of modules 11, 12 and 13 has no wavelength above 13 cells. Its ripples are a systematic slope error that more units do not remove. This is also why a random projection of the smoothed grid code is periodic: smoothing leaves each module its first harmonic, and the projection correlates 0.84 with itself 12 cells away.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Navigation probe</h2>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>code</th><th>field / grid period</th><th>units</th><th>readout</th><th>error</th><th>basin</th><th>reach</th></tr></thead>
+      <tbody>
+        <tr><td>baseline, one scale</td><td>2.51</td><td>1024</td><td>forward</td><td>4.8&deg;</td><td>28.4</td><td>0.996</td></tr>
+        <tr><td>5% fast</td><td>1.17</td><td>4096</td><td>forward</td><td>41.6&deg;</td><td>42.0</td><td>0.438</td></tr>
+        <tr><td>5% fast</td><td>1.17</td><td>4096</td><td>centred &plusmn;1</td><td>9.6&deg;</td><td>42.0</td><td>0.993</td></tr>
+        <tr class="hl"><td>30% fast</td><td>0.67</td><td>4096</td><td>centred &plusmn;4</td><td>14.7&deg;</td><td>35.9</td><td>0.976</td></tr>
+        <tr><td>50% fast</td><td>0.52</td><td>4096</td><td>centred &plusmn;4</td><td>31.9&deg;</td><td>30.8</td><td>0.807</td></tr>
+        <tr class="hl"><td>50% fast</td><td>0.52</td><td>8192</td><td>centred &plusmn;4</td><td>23.4&deg;</td><td>35.0</td><td>0.875</td></tr>
+        <tr><td>one scale, r 4.2</td><td>0.50</td><td>4096</td><td>centred &plusmn;1</td><td>51.3&deg;</td><td>7.4</td><td>0.569</td></tr>
+        <tr><td>10% direct grid input</td><td>0.77</td><td>4096</td><td>centred &plusmn;1</td><td>30.5&deg;</td><td>39.3</td><td>0.554</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="note" style="margin-top:10px">Hebbian storage, five stored goals, one recall step, 20-cell arenas. Fast waves at scale 3 cells except the 5% rows (scale 2). Mouse target is 0.4 to 0.5 grid periods.</p>
+  </section>
+
+  <section class="answer">
+    <h2 style="margin:0">Where the mouse target stands</h2>
+    <p>Fields of 0.67 grid periods work at 4096 units. Fields of 0.52 reach 0.875 at 8192 units. By the unit law, matching the baseline's direction error at 0.5 needs roughly 16k to 32k units. That last number is an extrapolation.</p>
+    <p>In a 20-cell arena the mouse-sized code has 49% of units active and 1.55 fields per active unit, so the cost in single-unit statistics is small.</p>
+  </section>
+
+  <section>
+    <h2>Not done</h2>
+    <ul class="open">
+      <li>Building the two-scale code in the grid wave network. A second population with faster depression is the obvious construction.</li>
+      <li>16k to 32k units on the real probe.</li>
+      <li>The RL controller on these codes. It may tolerate a noisier direction signal than the greedy probe walk.</li>
+      <li>A decision for you: the forward-difference bias sits in the production readout, so any small-field encoder hits it in the real agent.</li>
+    </ul>
+    <p class="note" style="margin-top:14px">Branch <code>worktree-field-kernel-tradeoff</code>, write-up <code>docs/EXPERIMENTS_FIELD_KERNEL.md</code>. One frequency seed per code.</p>
+  </section>
+</div>
+
+<script>
+(function () {
+  var NS = "http://www.w3.org/2000/svg";
+  function el(n, a, t) { var e = document.createElementNS(NS, n); for (var k in a) e.setAttribute(k, a[k]); if (t != null) e.textContent = t; return e; }
+  function chart(id, o) {
+    var W = 420, H = 260, m = { l: 44, r: 14, t: 10, b: 36 }, host = document.getElementById(id);
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": o.label });
+    var X = function (v) { return m.l + (o.xs(v) - o.xs(o.x0)) / (o.xs(o.x1) - o.xs(o.x0)) * (W - m.l - m.r); };
+    var Y = function (v) { return H - m.b - (o.ys(v) - o.ys(o.y0)) / (o.ys(o.y1) - o.ys(o.y0)) * (H - m.t - m.b); };
+    if (o.band) svg.appendChild(el("rect", { x: m.l, y: Y(o.band[1]), width: W - m.l - m.r, height: Y(o.band[0]) - Y(o.band[1]), fill: "var(--band)" }));
+    o.yt.forEach(function (v) {
+      svg.appendChild(el("line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: "var(--rule)", "stroke-width": 1 }));
+      svg.appendChild(el("text", { x: m.l - 7, y: Y(v) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--fg2)" }, String(v)));
+    });
+    o.xt.forEach(function (v) { svg.appendChild(el("text", { x: X(v), y: H - m.b + 16, "text-anchor": "middle", "font-size": 11, fill: "var(--fg2)" }, String(v))); });
+    svg.appendChild(el("text", { x: (m.l + W - m.r) / 2, y: H - 4, "text-anchor": "middle", "font-size": 11, fill: "var(--muted)" }, o.xl));
+    if (o.band) svg.appendChild(el("text", { x: W - m.r - 4, y: Y(o.band[1]) + 13, "text-anchor": "end", "font-size": 10.5, fill: "var(--fg2)" }, "mouse"));
+    o.series.forEach(function (s) {
+      var d = s.pts.map(function (p, i) { return (i ? "L" : "M") + X(p[0]).toFixed(1) + " " + Y(p[1]).toFixed(1); }).join("");
+      svg.appendChild(el("path", { d: d, fill: "none", stroke: s.c, "stroke-width": 2, "stroke-linejoin": "round", "stroke-dasharray": s.dash || "" }));
+      if (o.dots) s.pts.forEach(function (p) { svg.appendChild(el("circle", { cx: X(p[0]), cy: Y(p[1]), r: 4, fill: s.c, stroke: "var(--bg)", "stroke-width": 2 })); });
+    });
+    var cross = el("line", { y1: m.t, y2: H - m.b, stroke: "var(--muted)", "stroke-width": 1, visibility: "hidden" });
+    svg.appendChild(cross);
+    var tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true;
+    host.appendChild(svg); host.appendChild(tip);
+    var xsAll = o.series[0].pts.map(function (p) { return p[0]; });
+    svg.addEventListener("pointermove", function (e) {
+      var r = svg.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W, best = 0, bd = 1e9;
+      xsAll.forEach(function (v, i) { var dd = Math.abs(X(v) - px); if (dd < bd) { bd = dd; best = i; } });
+      cross.setAttribute("x1", X(xsAll[best])); cross.setAttribute("x2", X(xsAll[best])); cross.setAttribute("visibility", "visible");
+      tip.innerHTML = "<b>" + o.xfmt(xsAll[best]) + "</b><br>" + o.series.map(function (s) { return s.name + ": " + s.pts[best][1].toFixed(2); }).join("<br>");
+      tip.hidden = false;
+      var tx = X(xsAll[best]) / W * r.width + 12; if (tx > r.width - 170) tx -= 190;
+      tip.style.left = Math.max(0, tx) + "px"; tip.style.top = "8px";
+    });
+    svg.addEventListener("pointerleave", function () { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
+  }
+  var lin = function (v) { return v; }, lg = Math.log;
+  function prof(a) { return a.map(function (v, i) { return [2 * i, v]; }); }
+  chart("k", { label: "Kernels of four codes", x0: 0, x1: 64, y0: 0, y1: 1, xs: lin, ys: lin,
+    xt: [0, 16, 32, 48, 64], yt: [0, 0.25, 0.5, 0.75, 1], xl: "separation (cells)", xfmt: function (v) { return v + " cells"; },
+    series: [
+      { name: "one scale, r 23.2", c: "var(--base)", pts: prof([1.0,0.991,0.964,0.923,0.871,0.811,0.745,0.676,0.607,0.539,0.474,0.414,0.358,0.307,0.262,0.222,0.187,0.157,0.131,0.11,0.091,0.076,0.063,0.053,0.044,0.037,0.031,0.026,0.022,0.018,0.016,0.013,0.011]) },
+      { name: "30% fast", c: "var(--s1)", pts: prof([1.0,0.86,0.644,0.517,0.462,0.42,0.381,0.351,0.317,0.273,0.232,0.202,0.18,0.162,0.144,0.127,0.11,0.092,0.075,0.06,0.049,0.041,0.036,0.032,0.028,0.026,0.024,0.017,0.011,0.01,0.012,0.01,0.009]) },
+      { name: "50% fast", c: "var(--s2)", pts: prof([1.0,0.775,0.464,0.313,0.267,0.242,0.22,0.211,0.2,0.169,0.135,0.116,0.108,0.1,0.09,0.082,0.073,0.059,0.046,0.037,0.033,0.028,0.022,0.016,0.013,0.015,0.013,0.007,0.004,0.008,0.011,0.006,0.002]) },
+      { name: "one scale, r 4.2", c: "var(--s3)", dash: "5 4", pts: prof([1.0,0.776,0.41,0.169,0.063,0.024,0.01,0.004,0.002,0.001,0,-0.001,-0.002,-0.001,0.001,0.002,0.002,-0.001,-0.006,-0.009,-0.012,-0.013,-0.012,-0.009,-0.006,-0.004,-0.002,0.002,0.008,0.012,0.013,0.01,0.01].map(function (v) { return Math.max(v, 0); })) }
+    ] });
+  chart("w", { label: "Field width against fast share", x0: 0, x1: 0.5, y0: 0.3, y1: 3, xs: lin, ys: lg, dots: true, band: [0.4, 0.5],
+    xt: [0, 0.1, 0.2, 0.3, 0.4, 0.5], yt: [0.5, 1, 2], xl: "fast share of input variance", xfmt: function (v) { return Math.round(v * 100) + "% fast"; },
+    series: [
+      { name: "fast waves", c: "var(--s1)", pts: [[0,2.51],[0.02,2.1],[0.05,1.39],[0.1,1.06],[0.2,0.78],[0.3,0.67],[0.5,0.52]] },
+      { name: "grid input", c: "var(--s2)", pts: [[0,2.51],[0.02,1.45],[0.05,1.03],[0.1,0.77],[0.2,0.56],[0.3,0.47],[0.5,0.38]] }
+    ] });
+})();
+</script>
