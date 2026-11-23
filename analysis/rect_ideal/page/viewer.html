@@ -2224,8 +2224,12 @@ const RES_MEASURES = [
     def: "Share of scored arenas (the first 3 per layout) whose reach is below 0.5. Lower is better." + PROBE_SETUP },
   { key: "s15", group: "probe", label: "Direction within 45° after 15 steps", share: true,
     def: "Share of arena cells with direction error under 45° when q is read after 15 recall steps instead of one." + PROBE_SETUP },
-  { key: "fpu", group: "fields", label: "Fields per unit, mean", p: 1, get: q => q.support.fields_per_unit.mean,
-    def: "A field is a connected region (4-neighbour) where the unit is active, over the whole 1716 × 1716 scaffold with its edges joined. Every field counts, single cells included." },
+  { key: "fpl2", group: "fields", label: "Fields per cell per grid period²", sig: 2, get: (q, ctx) => perPeriod2(q, ctx, q.support.fields_per_unit.mean),
+    def: "Fields per cell in a square one smallest grid period on a side (11 × 11 cells): the mean fields per cell over the whole scaffold × (11 / scaffold side)². It does not depend on the scaffold's size, and it is the literature review's fields per λ² (fields per m² × the smallest grid spacing squared): rat dorsal CA1, counting every cell, 0.020 to 0.031 (Tanni et al. 2022); long tracks 0.025 to 0.036 per grid period. A field is a connected region (4-neighbour) where the cell is active; every field counts, single cells included." },
+  { key: "p20_fpl2", group: "fields", label: "Fields per cell per grid period², 20% of peak", sig: 2, get: (q, ctx) => perPeriod2(q, ctx, q.peak20.fields_per_unit.mean),
+    def: "The same density with fields defined as connected regions at or above 20% of the cell's own peak over the scaffold." },
+  { key: "fpu", group: "fields", label: "Fields per cell over the whole scaffold", p: 1, get: q => q.support.fields_per_unit.mean,
+    def: "The count over the whole scaffold (1716 × 1716 cells for modules 11, 12, 13; 3795 × 3795 for 11, 15, 23), so it grows with the scaffold's area. Fields per cell per grid period² removes that." },
   { key: "fpu_min", group: "fields", label: "Fields per unit, fewest", p: 0, get: q => q.support.fields_per_unit.min,
     def: "The smallest number of fields any unit of the code has over the whole scaffold." },
   { key: "fpu_max", group: "fields", label: "Fields per unit, most", p: 0, get: q => q.support.fields_per_unit.max,
@@ -2271,7 +2275,7 @@ function buildMeasureSelect() {
     groups[m.group].append(o);
   }
   $("res-measure").replaceChildren(...Object.values(groups));
-  if (!measureOk(RES_BY_KEY[st.res.measure])) st.res.measure = "fpu";
+  if (!measureOk(RES_BY_KEY[st.res.measure])) st.res.measure = "fpl2";
   $("res-measure").value = st.res.measure;
 }
 function indexResults(RR) {
@@ -2280,7 +2284,13 @@ function indexResults(RR) {
   for (const q of RR.fields || []) F.set(rectKey(q.f, q.D), q);
   return { P, F };
 }
-const fmtRes = (m, v) => m.share ? v.toFixed(3) : v.toFixed(m.p);
+const fmtRes = (m, v) => m.sig ? v.toPrecision(m.sig) : m.share ? v.toFixed(3) : v.toFixed(m.p);
+// Fields per cell in one smallest-grid-period square: count x (smallest module / scaffold side)^2.
+// The hippocampus results carry npos and lambdas; the rectified ones take them from their module set.
+function perPeriod2(q, ctx, count) {
+  const npos = q.npos || ctx.npos, lmin = Math.min(...(q.lambdas || ctx.lambdas));
+  return count * (lmin / npos) * (lmin / npos);
+}
 const codeName = (f, D) => (f === null ? "Ideal, signed" : Math.round(100 * f) + "% active") + ", " + D + " units";
 function resValue(m, f, D) {
   if (!st.RX) return NaN;
@@ -2290,7 +2300,7 @@ function resValue(m, f, D) {
     v = p && p.K[st.res.K] ? p.K[st.res.K][m.key] : null;
   } else if (f !== null) {
     const q = st.RX.F.get(rectKey(f, D));
-    v = q ? m.get(q) : null;
+    v = q ? m.get(q, st.RM) : null;
   }
   return v == null ? NaN : v;
 }
@@ -2309,7 +2319,7 @@ function resSource(m) {
       colLabel: k => "modules " + V(k).HM.lambdas.join(", "),
       rowLabel: f => Math.round(100 * f) + "% active",
       name: (f, k) => lab + ", " + Math.round(100 * f) + "% active, modules " + V(k).HM.lambdas.join(", "),
-      value: (f, k) => { const H = V(k), q = H.HX && H.HX.get(fTag(f)), v = q ? m.get(q) : null; return v == null ? NaN : v; },
+      value: (f, k) => { const H = V(k), q = H.HX && H.HX.get(fTag(f)), v = q ? m.get(q, H.HM) : null; return v == null ? NaN : v; },
       clickable: () => true, isSel: (f, k) => f === st.vhpc.f && k === st.vhpc.v,
       pick: (f, k) => { setThrF(f); setVhpc(k); setPop(key); },
       missing: mods.every(x => !V(x.modules).HR) ? "Field results for this population are not in yet." : null,
@@ -2386,7 +2396,8 @@ function renderSelectedHpc(key) {
     const s = q.support, k = q.kernel, d = s.diam_over_lambda, dc = s.diam_cells, n = s.fields_per_unit, p = q.peak20, cv = s.coverage_per_unit;
     rows.push(["Kernel half-width", fx(k.half_width_raw, 2) + " cells raw, " + fx(k.half_width_inh, 2) + " after inhibition"]);
     rows.push(["Similarity floor", k.floor_raw.toFixed(3) + " raw, " + k.floor_inh.toFixed(3) + " after inhibition"]);
-    rows.push(["Fields per cell", "mean " + n.mean.toFixed(1) + ", median " + n.median.toFixed(0) + ", range " + n.min + "–" + n.max]);
+    rows.push(["Fields per cell per grid period²", perPeriod2(q, HM, n.mean).toPrecision(2) + " (rat CA1 0.020 to 0.031)"]);
+    rows.push(["Fields per cell, whole scaffold", "mean " + n.mean.toFixed(1) + ", median " + n.median.toFixed(0) + ", range " + n.min + "–" + n.max]);
     rows.push(["Fields in total", s.n_fields.toLocaleString()]);
     rows.push(["Field diameter", "median " + d.median.toFixed(2) + " grid periods (" + dc.median.toFixed(1) + " cells), mean " + d.mean.toFixed(2)]);
     rows.push(["Diameter spread", "5–95% " + d.p5.toFixed(2) + "–" + d.p95.toFixed(2) + ", range " + d.min.toFixed(2) + "–" + d.max.toFixed(2)]);
@@ -2410,7 +2421,8 @@ function renderSelected() {
     const s = q.support, k = q.kernel, d = s.diam_over_lambda, n = s.fields_per_unit, p = q.peak20;
     rows.push(["Kernel half-width", k.half_width_inh.toFixed(1) + " cells after inhibition; ideal " + k.half_width_ideal_r16.toFixed(1)]);
     rows.push(["Similarity floor", k.floor_raw.toFixed(3) + " raw, " + k.floor_inh.toFixed(3) + " after inhibition"]);
-    rows.push(["Fields per unit", "mean " + n.mean.toFixed(1) + ", median " + n.median.toFixed(0) + ", range " + n.min + "–" + n.max]);
+    rows.push(["Fields per cell per grid period²", perPeriod2(q, st.RM, n.mean).toPrecision(2) + " (rat CA1 0.020 to 0.031)"]);
+    rows.push(["Fields per unit, whole scaffold", "mean " + n.mean.toFixed(1) + ", median " + n.median.toFixed(0) + ", range " + n.min + "–" + n.max]);
     rows.push(["Fields in total", s.n_fields.toLocaleString()]);
     rows.push(["Field diameter", "median " + d.median.toFixed(2) + ", mean " + d.mean.toFixed(2) + " grid periods"]);
     rows.push(["Diameter spread", "5–95% " + d.p5.toFixed(2) + "–" + d.p95.toFixed(2) + ", range " + d.min.toFixed(2) + "–" + d.max.toFixed(2)]);

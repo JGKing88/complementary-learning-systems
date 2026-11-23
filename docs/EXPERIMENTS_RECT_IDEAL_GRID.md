@@ -404,3 +404,30 @@ At 0.66 fields per 100^2 and K = 5 with inhibition: 256 units 6.1 degrees, exact
   (the same pattern as the dense rectified codes).
 * **A spread of widths trades direction for basin at a fixed kernel:** 7.0 degrees against 2.8, with
   a basin of 41 cells against 32.
+
+## Field density per grid period, against rats (2026-11-23)
+
+Fields per cell over the whole scaffold grow with the scaffold's area, which is arbitrary. The page
+and this table now use **fields per cell per grid period squared**: the mean fields per cell over
+the scaffold times (smallest module / scaffold side)^2, i.e. fields per cell in an 11 x 11-cell
+square. It is the literature review's "fields per λ²" (fields per m² times the smallest grid spacing
+squared, rat module 1 at 39 to 49 cm): rat dorsal CA1 counting every cell, 0.020 to 0.031 (Tanni et
+al. 2022, arenas of 1 to 9 m²); long 1D tracks 0.025 to 0.036 per grid period (Rich et al. 2014, Lee
+et al. 2020).
+
+| code | 2% | 5% | 10% | 20% | 35% | 50% |
+|---|---|---|---|---|---|---|
+| rectified ideal, 1024 units (any module set at r = 16) | 0.0024 | 0.0050 | 0.0080 | 0.0103 | 0.0081 | 0.0032 |
+| hippocampus, smoothed input, 11 12 13 | 0.53 | 0.93 | 1.28 | 1.41 | 1.02 | 0.51 |
+| hippocampus, one-hot input | 2.3 | 5.4 | 9.7 | 14.7 | 14.5 | 9.4 |
+
+Independent bumps: density 0.2, 0.66, 0.85 and 3 fields per 100² cells give 0.0024, 0.0080, 0.0103 and
+0.036 per grid period².
+
+* **The rectified ideal codes have a quarter to a third of the rat's field density** at the same grid
+  scale, at most 0.010 per grid period² (at 20% active) against 0.020 to 0.031.
+* **The hippocampus layer has 20 to 500 times the rat's density**, because its fields are one to five
+  cells across.
+* **Bumps at rat density (0.020 to 0.031, between the probed 0.85 and 3 per 100²) work well in the
+  memory with inhibition:** at 0.85 and 3 per 100² the probe gives 2.7 and 1.8 degrees, exact
+  retrieval 1.00 and a 31-cell basin at K = 5.
