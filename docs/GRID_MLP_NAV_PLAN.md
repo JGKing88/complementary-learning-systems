@@ -1286,7 +1286,8 @@ protocol (revisit 0.26 to 0.53 over all envs, all searching; idea 1:
 supervised one at the controller's lr, and keeps but does not adapt it at a
 tenth. The memory fails along the agent's own path; training it on
 recorded agent paths (DAgger) fixes that for 2 to 3 goals, and a controller
-retrained around that memory reaches 0.55 to 0.65.
+retrained around that memory reaches 0.55 to 0.65 early in its training
+(0.65 at u500), then falls back to searcher level (0.43 at u2900).
 
 Idea 4 differs from idea 3 (§7). Idea 3's GRU has to decode directions, hold
 goals and choose actions in one state. Idea 4's network only holds goals, and
@@ -2556,10 +2557,14 @@ trains the other ideas can learn this kind of memory without a memory loss.
    goals; offline under scripted walks it held 3 to 5, and the protocol
    needs 6.
 4. Training both, the memory on the agent's paths and the controller
-   around the memory (arm 6, DAgger rounds 2 to 4), is the best idea 4
+   around the memory (arm 6, DAgger rounds 2 to 4), gives the best idea 4
    agent: 0.55 to 0.65 revisit over all envs, the first goal kept through
    every block, against idea 1's 1.000 in 12.85 steps. More DAgger rounds
-   move it by a few points either way.
+   move it by a few points either way. The peak is early: arm 6 gives 0.65
+   at u500, 0.60 at u750, 0.47 at u1000 and 0.43 at u2900, the level of the
+   frozen-memory searchers (arm 1 u3550 0.45, arm 2 u3750 0.42). Training
+   the controller longer on lifetimes of 3 to 6 arenas, where the memory
+   holds only 2 to 3 goals, moves it back toward searching.
 
 An activity memory can work as an agent's memory only when it is trained
 on that agent's own movement, and then for a few goals; RL alone does not
@@ -2567,9 +2572,11 @@ find it. A table needs neither: it changes only at the store, so the
 agent's movement between stores cannot disturb what it holds.
 
 Final protocol runs are queued behind each remaining chain's last link
-(arm 1 job 30061597, arm 2 30061598, arm 3 30061599, arm 5b 30061600, arm
-6 30061601; `run_idea4_agent_cl.sh` on `navigate_final.pt`, results in
-`$CLS_RUNS/idea4/agent_cl/cl_<arm>_final.json`). Recordings are in
+(`run_idea4_agent_cl.sh` on `navigate_final.pt`, results in
+`$CLS_RUNS/idea4/agent_cl/cl_<arm>_final.json`): arm 3 job 30061599, arm
+5b 30061600; arms 1, 2 and 6 ran out of links before u4000 (arm 1 at
+u3550, arm 2 at u3750, arm 6 near u3200), so they got 2, 1 and 3 more links
+and their finals are jobs 30212112, 30212113 and 30212114. Recordings are in
 `$CLS_RUNS/idea4/replay/rec_*`, DAgger memories in
 `$CLS_RUNS/idea4/replay/r*_*/memory.pt`.
 
@@ -2591,7 +2598,7 @@ have 16 links against 8.
 | Idea 2 `M` | MLP; phase outputs + confidence; panorama view input — **agreed** |
 | Idea 2 training | Default in §6.2 and §6.3. One plastic MLP, meta-learn θ₀ and α, supervised write at the store, PPO does not train `M`. **Decided.** Variants in §6.5, small choices in §6.6. |
 | Idea 3 | GRU with the live view, `g_t`, previous action and reward; no memory readout. Hidden state carried across visits (stage 1), then across the continual protocol (stage 2). **Decided**; rest open (§7.4). |
-| Idea 4 | Compared as a memory on one retention test: capacity, cost of one more goal and size, against idea 1's table, Hopfield, idea 2 and the delta rule (§7b.13). Agent run only in a ≤6-goal regime (§7b.14); agents trained around the memory and with the memory learned by PPO (§7b.15): best 0.55 to 0.65 revisit, via DAgger on the agent's paths plus a retrained controller, against idea 1's 1.000. **Decided.** |
+| Idea 4 | Compared as a memory on one retention test: capacity, cost of one more goal and size, against idea 1's table, Hopfield, idea 2 and the delta rule (§7b.13). Agent run only in a ≤6-goal regime (§7b.14); agents trained around the memory and with the memory learned by PPO (§7b.15): best 0.55 to 0.65 revisit (arm 6 at u500, falling to 0.43 by u2900), via DAgger on the agent's paths plus a retrained controller, against idea 1's 1.000. **Decided.** |
 | d0_base recipe | later variant |
 | Learned store head | later, once the oracle version works |
 
