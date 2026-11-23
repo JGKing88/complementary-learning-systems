@@ -54,12 +54,12 @@ code { font-size: .85em; background: var(--panel); padding: 1px 5px; border-radi
   <header>
     <div class="kicker">Ideal encoder &middot; field width against kernel width &middot; 2026-11-21</div>
     <h1>Can a code have small place fields and a wide kernel?</h1>
-    <p class="lede">Yes. Field width and kernel width are two different moments of one spectrum. Give each unit a slow input and a fast input before the threshold and they separate. The memory keeps working. The direction readout is what pays.</p>
+    <p class="lede">Yes. Field width and kernel width are two different moments of one spectrum. Give each unit a slow input and a fast input before the threshold and they separate. Retrieval is unchanged. The direction readout gets noisier and needs more units.</p>
   </header>
 
   <section class="charts">
     <div class="chart">
-      <h3>The kernel keeps its shoulder</h3>
+      <h3>The kernel stays wide below its peak</h3>
       <div class="sub">Population similarity (Pearson) against separation in cells. 10% of units active.</div>
       <div class="plot" id="k"></div>
       <div class="legend">
@@ -85,9 +85,9 @@ code { font-size: .85em; background: var(--panel); padding: 1px 5px; border-radi
     <ol class="points">
       <li><b>The kernel is fixed by the input's correlation and the threshold.</b> Predicted and measured widths agree on five different spectra (for example 38.5 against 38.4 cells).</li>
       <li><b>Field width follows the spectrum's second moment.</b> A fast share above about 2% already dominates it, while the kernel's shoulder only falls in proportion to the slow share. With one scale the two are locked, and sparsity alone buys at most 1.5&times; smaller fields.</li>
-      <li><b>The memory does not care.</b> Exact retrieval stays at 1.000 and the basin at 31 to 36 cells. A single-scale code with the same small fields retrieves 0.54 with a basin of 6.5.</li>
-      <li><b>The direction readout pays twice.</b> Production's forward one-cell difference has a bias that grows as fields shrink: 41&deg;, 42&deg; and 42&deg; at 1024, 4096 and 8192 units. A centred difference removes it. What remains is noise that falls as about 1/&radic;units, so units needed grow as about 1/W&sup2;.</li>
-      <li><b>The fast input cannot come straight from the grid code.</b> A linear readout of modules 11, 12 and 13 has no wavelength above 13 cells. Its ripples are a systematic slope error that more units do not remove. This is also why a random projection of the smoothed grid code is periodic: smoothing leaves each module its first harmonic, and the projection correlates 0.84 with itself 12 cells away.</li>
+      <li><b>Retrieval is unchanged.</b> Exact retrieval stays at 1.000 and the basin at 31 to 36 cells. A single-scale code with the same small fields retrieves 0.54 with a basin of 6.5.</li>
+      <li><b>The direction readout degrades in two ways.</b> Production's forward one-cell difference has a bias that grows as fields shrink: 41&deg;, 42&deg; and 42&deg; at 1024, 4096 and 8192 units. A centred difference removes it. What remains is noise that falls as about 1/&radic;units, so units needed grow as about 1/W&sup2;.</li>
+      <li><b>The fast input cannot come straight from the grid code.</b> A linear readout of modules 11, 12 and 13 has no wavelength above 13 cells. Its ripples are a systematic slope error that more units do not remove. A random projection of the smoothed grid code is periodic for the same reason. Smoothing leaves each module its first harmonic, and the projection correlates 0.84 with itself 12 cells away.</li>
     </ol>
   </section>
 
@@ -114,7 +114,7 @@ code { font-size: .85em; background: var(--panel); padding: 1px 5px; border-radi
   <section class="answer">
     <h2 style="margin:0">Where the mouse target stands</h2>
     <p>Fields of 0.67 grid periods work at 4096 units. Fields of 0.52 reach 0.875 at 8192 units. By the unit law, matching the baseline's direction error at 0.5 needs roughly 16k to 32k units. That last number is an extrapolation.</p>
-    <p>In a 20-cell arena the mouse-sized code has 49% of units active and 1.55 fields per active unit, so the cost in single-unit statistics is small.</p>
+    <p>In a 20-cell arena the mouse-sized code has 49% of units active and 1.55 fields per active unit, against 22% and 1.00 for the baseline.</p>
   </section>
 
   <section>
@@ -123,7 +123,7 @@ code { font-size: .85em; background: var(--panel); padding: 1px 5px; border-radi
       <li>Building the two-scale code in the grid wave network. A second population with faster depression is the obvious construction.</li>
       <li>16k to 32k units on the real probe.</li>
       <li>The RL controller on these codes. It may tolerate a noisier direction signal than the greedy probe walk.</li>
-      <li>A decision for you: the forward-difference bias sits in the production readout, so any small-field encoder hits it in the real agent.</li>
+      <li>Whether to change the production readout to a centred difference. The forward-difference bias is in the agent's readout, so any small-field encoder will have it there.</li>
     </ul>
     <p class="note" style="margin-top:14px">Branch <code>worktree-field-kernel-tradeoff</code>, write-up <code>docs/EXPERIMENTS_FIELD_KERNEL.md</code>. One frequency seed per code.</p>
   </section>
