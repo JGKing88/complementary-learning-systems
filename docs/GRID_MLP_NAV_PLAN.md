@@ -2576,7 +2576,15 @@ Final protocol runs are queued behind each remaining chain's last link
 `$CLS_RUNS/idea4/agent_cl/cl_<arm>_final.json`): arm 3 job 30061599, arm
 5b 30061600; arms 1, 2 and 6 ran out of links before u4000 (arm 1 at
 u3550, arm 2 at u3750, arm 6 near u3200), so they got 2, 1 and 3 more links
-and their finals are jobs 30212112, 30212113 and 30212114. Recordings are in
+and their finals are jobs 30212112, 30212113 and 30212114.
+
+Finals at u4000 (2026-11-24), revisit over all envs, with u1000 and the
+live-env revisit steps: arm 1 0.46 (u1000 0.30; 90 steps), arm 2 0.38
+(0.45; 84), arm 3 0.37 (0.53; 81). 3000 more updates leave all three
+searching. Arm 2's last link and arm 6's three extra links were cut short
+(root cancelled two links on 11-23; arm 6 needs about 63 s per update in
+the 6-arena stage), so arm 2's final is job 30246966 and arm 6's is job
+30341120 after one more link; arm 5b's is job 30061600. Recordings are in
 `$CLS_RUNS/idea4/replay/rec_*`, DAgger memories in
 `$CLS_RUNS/idea4/replay/r*_*/memory.pt`.
 
