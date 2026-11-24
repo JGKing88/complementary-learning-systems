@@ -1,10 +1,14 @@
 """Apply an audit's corrections to a sweep table, in place.
 
-    python apply_corrections.py SWEEP.csv CORRECTIONS.csv
+    python apply_corrections.py SWEEP.csv CORRECTIONS.csv [PREFIX]
 
 CORRECTIONS.csv has columns row_id, column, old_value, new_value, reason, evidence. A change is applied
 only when the cell still holds old_value (both empty counts as a match), so a stale or mistyped
 correction is reported instead of overwriting newer data. column=DROP removes the row.
+
+One corrections file can target several tables by prefixing row ids, e.g. "sweep_kernel.csv:K26".
+With PREFIX, only entries whose row_id starts with it are used (prefix stripped). Without PREFIX,
+entries whose row_id contains ":" belong to another table and are skipped.
 """
 import csv
 import sys
@@ -12,6 +16,7 @@ import sys
 
 def main():
     sweep_path, corr_path = sys.argv[1], sys.argv[2]
+    prefix = sys.argv[3] if len(sys.argv) > 3 else None
     with open(sweep_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fields = reader.fieldnames
@@ -20,9 +25,17 @@ def main():
     with open(corr_path, newline="", encoding="utf-8") as f:
         corrections = list(csv.DictReader(f))
 
-    applied, conflicts, missing, dropped = 0, [], [], set()
+    applied, conflicts, missing, dropped, skipped = 0, [], [], set(), 0
     for c in corrections:
         rid, col = c["row_id"].strip(), c["column"].strip()
+        if prefix:
+            if not rid.startswith(prefix):
+                skipped += 1
+                continue
+            rid = rid[len(prefix):]
+        elif ":" in rid:
+            skipped += 1
+            continue
         if rid not in by_id:
             missing.append(rid)
             continue
@@ -44,7 +57,8 @@ def main():
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         w.writerows(kept)
-    print(f"{applied} applied, {len(dropped)} rows dropped, {len(conflicts)} conflicts, {len(missing)} unknown ids")
+    print(f"{applied} applied, {len(dropped)} rows dropped, {len(conflicts)} conflicts, {len(missing)} unknown ids, "
+          f"{skipped} for other tables")
     for rid, col, why in conflicts:
         print(f"  CONFLICT {rid}.{col}: {why}")
     for rid in sorted(set(missing)):
