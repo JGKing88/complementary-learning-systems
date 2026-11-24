@@ -7,9 +7,11 @@ one row per region x long-axis level x environment class. A row's range runs fro
 to the largest contributing value, and its "studies" field lists the contributing studies.
 The mouse grid also takes rows from sweep_fields_rsc.csv and sweep_fields_mec_nongrid.csv, one
 per region x environment class, each carrying a "group" ("Retrosplenial cortex" or "MEC, non-grid
-cells") that the heat map prints as a header. Kernel rows ("Rat kernel", "Mouse kernel") come
-from sweep_kernel.csv and its audits: one row per study x region x level x condition, as the full
-width at which population-vector correlation falls to 0.5. Both kinds keep the existing columns.
+cells") that the heat map prints as a header; the rat grid takes the rat rows of those groups
+(Butler 2019's non-grid MEC widths). Kernel rows ("Rat kernel", "Mouse kernel") come from
+sweep_kernel.csv and its audits, plus the two Alexander & Nitz rat CA1 curves in
+sweep_kernel_rsc.csv: one row per study x region x level x condition, as the full width at which
+population-vector correlation falls to 0.5. Both kinds keep the existing columns.
 Every per-row decision (exclusion, value substitution, environment class) is written out below
 with its reason, and --report prints the exclusion and contribution tables used in the notes.
 """
@@ -181,7 +183,9 @@ MOUSE_EXCLUDE = {
     "sheintuch2023_2": PEAK_ONLY.format("30% of maximum on 4 cm bins with no smoothing"),
     "rechavi2022_1": PEAK_ONLY.format("4 cm bins with no smoothing"),
     "tarcsay2025_1": PEAK_ONLY.format("Gaussian-mixture split"),
-    "mallory2018_1": "arena size not read, so no environment class",
+    # mallory2018_1 was excluded here while its arena size was unread. The Online Methods give
+    # 50 or 62 cm squares, a real environment up to 2 m, so it enters (pft2_corrections.csv), as
+    # does mallory2018_2 (1 m linear track, size stated; pft2_additions_fields_mouse.csv).
     "chen2018_2": "virtual 2D square; the mouse classes have no virtual-arena class (same cells as chen2018_1)",
     "kim2023_2": "all fields summed; the per-field value of the same cells (kim2023_1) is used",
     "kim2023_4": "all fields summed; the per-field value of the same cells (kim2023_3) is used",
@@ -209,7 +213,7 @@ MOUSE_ATTACH = {
     "chockanathan2021_1": ("CA1", "dorsal", "virtual"), "chockanathan2021_2": None,
     "schuette2022_1": ("CA1", "dorsal", "real"), "sheintuch2023_2": ("CA1", "dorsal", "real"),
     "sheintuch2023_1": ("CA3", "dorsal", "real"), "rechavi2022_1": ("CA1", "dorsal", "real"),
-    "tarcsay2025_1": ("CA1", "dorsal", "real"), "mallory2018_1": ("CA1", "dorsal", "real"),
+    "tarcsay2025_1": ("CA1", "dorsal", "real"),
     "chen2018_2": ("CA1", "dorsal", "virtual"), "kim2023_2": ("dentate granule cells", "dorsal", "real"),
     "kim2023_4": ("mossy cells", "dorsal", "real"), "bittner2017_1": None,
     "donegan2020_1": None, "donegan2020_2": None,
@@ -285,13 +289,15 @@ def aggregate(rows, species):
 
 # ---------------------------------------------------------------- retrosplenial and non-grid MEC widths
 
-# Both sweeps add mouse rows under their own group headers, one row per region x environment
-# class, with the deduplication rules above. The retrosplenial sweep also holds CA1 comparison
-# rows: two repeat rows of sweep_fields_mouse.csv and are dropped; a new mouse CA1 width
-# (navratilova2026_4) joins the hippocampal mouse rows. No rat row survives: the only rat width
-# (Smith 2012) has no environment size.
+# Both sweeps add rows under their own group headers, one row per species x region x environment
+# class, with the deduplication rules above; mouse rows go to the mouse grid and rat rows to the
+# rat grid. The retrosplenial sweep also holds CA1 comparison rows: two repeat rows of
+# sweep_fields_mouse.csv and are dropped; a new mouse CA1 width (navratilova2026_4) joins the
+# hippocampal mouse rows. No rat retrosplenial row survives: the only rat RSC width (Smith 2012)
+# has no environment size. The one rat non-grid MEC row is Butler 2019 (MNG33 and MNG35).
 GROUP_RSC, GROUP_MEC = "Retrosplenial cortex", "MEC, non-grid cells"
-EXTRA_CLASS_LABEL = dict(MOUSE_CLASS_LABEL, unstated="real open arena of unstated size")
+EXTRA_CLASS_LABEL = dict(MOUSE_CLASS_LABEL, **{"70 to 100 cm arena": "real open arena of 70 to 100 cm",
+                                               "1.5 m box": "real 1.5 m arena"})
 NO_WIDTH = "no width in cm (counts, fractions, ratios, angles or stability only)"
 
 RSC = {
@@ -339,18 +345,32 @@ MEC = {
         "MNG24": "share of a virtual track inside cue-cell fields under a lenient p < 0.3 rule, not a width",
         "MNG29": "distance from the wall to the field centre (8.2 cm), not a width; unclear whether it covers "
                  "6 or 20 cells",
+        "MNG34": "the same cells in the reward-task box (ENV2), a manipulation; the foraging-box rows MNG33 "
+                 "and MNG35 are used",
+        "MNG36": "grid cells' field size, the comparator for MNG33 to MNG35, not a non-grid width",
+        "MNG40": "share of the box covered by a field (35.17%), not a field width",
     },
-    "attach": {"MNG03": ("Dorsal MEC non-grid spatial cells", "", "unstated"), "MNG05": None,
-               "MNG02": None, "MNG24": None, "MNG29": None},
+    "attach": {"MNG03": ("Dorsal MEC non-grid spatial cells", "", "70 to 100 cm arena"), "MNG05": None,
+               "MNG02": None, "MNG24": None, "MNG29": None,
+               "MNG34": ("MEC and nearby cortex, non-grid spatial cells, level unstated", "", "1.5 m box"),
+               "MNG36": None, "MNG40": None},
     "region": {},
     # Border width is the field's extent perpendicular to the wall, so it gets its own labelled row.
+    # Butler 2019's cells lie in MEC (598 of 778) and nearby parasubiculum, postsubiculum and
+    # cortex, at depths not given; MNG35 is the high-coherence subset of MNG33's cells, so the two
+    # form that study's range, as Mao 2017's mean and median do.
     "region_id": {"MNG01": "Dorsal MEC non-grid spatial cells",
-                  "MNG04": "Dorsal MEC border cells, width perpendicular to the wall"},
-    "region_order": ["Dorsal MEC non-grid spatial cells", "Dorsal MEC border cells, width perpendicular to the wall"],
-    # Mallory 2018 gives no arena size in the accessible text (it is in the paywalled Online
-    # Methods). The rows stay, unlike mallory2018_1 in the mouse sweep, because they are the only
-    # non-grid widths and the grid spacing that forms M1's high end comes from the same mice.
-    "class": {"MNG01": "unstated", "MNG04": "unstated"},
+                  "MNG04": "Dorsal MEC border cells, width perpendicular to the wall",
+                  "MNG33": "MEC and nearby cortex, non-grid spatial cells, level unstated",
+                  "MNG35": "MEC and nearby cortex, non-grid spatial cells, level unstated"},
+    "region_order": ["Dorsal MEC non-grid spatial cells", "Dorsal MEC border cells, width perpendicular to the wall",
+                     "MEC and nearby cortex, non-grid spatial cells, level unstated"],
+    # Mallory 2018's Online Methods give the MEC arenas, 70, 90 or 100 cm squares chosen per mouse
+    # (pft2_corrections.csv). Butler 2019's boxes are 1.5 m squares. Butler's grid spacing, a median
+    # of 99.14 cm, pools 102 grid cells of the same data set and is not paired with the non-grid
+    # cells by rat; the rat grid's columns stay the Stensola modules.
+    "class": {"MNG01": "70 to 100 cm arena", "MNG04": "70 to 100 cm arena",
+              "MNG33": "1.5 m box", "MNG35": "1.5 m box"},
 }
 
 
@@ -371,21 +391,27 @@ def aggregate_extra(rows, cfg):
         if width is None:
             excluded.append((rid, NO_WIDTH, None))
             continue
-        if r["species"] != "mouse":
-            raise ValueError(f"{rid}: only mouse rows have a group in the grids")
+        species = r["species"]
+        if species not in ("mouse", "rat"):
+            raise ValueError(f"{rid}: only mouse and rat rows have a grid")
         if r["region"] == "CA1":
+            if species != "mouse":
+                raise ValueError(f"{rid}: a rat CA1 width in a group sweep needs a rule")
             passed.append(rid)
             continue
         region = cfg["region_id"].get(rid) or cfg["region"][r["region"]]
+        if species == "rat" and rid not in cfg["class"]:
+            raise ValueError(f"{rid}: rat rows need an environment class override")
         cls = cfg["class"].get(rid) or mouse_class(r)
-        groups.setdefault((region, cls), []).append({
+        groups.setdefault((species, region, cls), []).append({
             "id": rid, "study": study_key(r), "lo": width[0], "hi": width[1], "how": "",
             "env": r["environment_size"], "env_type": r["environment_type"],
             "length": first_num(r["env_length_m"]), "area": first_num(r["env_area_m2"]),
             "tag": tag(r["status"]), "doi": doi_url(r["doi_or_url"])})
     out, class_order = [], list(EXTRA_CLASS_LABEL)
-    for key in sorted(groups, key=lambda k: (cfg["region_order"].index(k[0]), class_order.index(k[1]))):
-        region, cls = key
+    for key in sorted(groups, key=lambda k: (k[0] != "mouse", cfg["region_order"].index(k[1]),
+                                             class_order.index(k[2]))):
+        species, region, cls = key
         contrib = groups[key]
         studies = list(OrderedDict.fromkeys(c["study"] for c in contrib))
         n = len(studies)
@@ -394,7 +420,8 @@ def aggregate_extra(rows, cfg):
             env = "large virtual track over 3 m"
         out.append({"key": key, "label": f"{region}, {env}, {n} {'study' if n == 1 else 'studies'}",
                     "lo_cm": min(c["lo"] for c in contrib), "hi_cm": max(c["hi"] for c in contrib),
-                    "studies": [short(s) for s in studies], "contrib": contrib, "group": cfg["group"]})
+                    "studies": [short(s) for s in studies], "contrib": contrib, "group": cfg["group"],
+                    "species": species})
     return out, excluded, passed
 
 
@@ -415,8 +442,22 @@ def aggregate_extra(rows, cfg):
 # r = 0.5 at 13.3 to 14.1 cm, within 1 cm of K16), K-mao2017_6 and _7 (Thy1 example matrices read
 # by colour-bar lookup, cell counts unclear; _7 removes the belt cues), fischer2020_k1 and _k2
 # (split-half correlation peaking at 0.76 to 0.82, so r = 0.5 is not half the peak, as N16; the
-# width also changes along the track and is narrowest at the landmark), and alexander2017_k1 and
-# miller2019_k1 (no width).
+# width also changes along the track and is narrowest at the landmark) and miller2019_k1 (no
+# width). The Alexander & Nitz retrosplenial curves are left out with the reasons in
+# KERNEL_EXCLUDE; their two CA1 curves (alexander2015_k3, alexander2017_k2) enter the rat grid.
+KERNEL_EXCLUDE = {
+    "alexander2015_k1": "rat RSC, odd against even trials on the 2.15 m W-shaped route; never reaches 0.5 "
+                        "(minimum 0.53 to 0.56), so no r = 0.5 width",
+    "alexander2015_k2": "rat RSC between two sessions at one room location on the 2.15 m route; it only touches "
+                        "0.50 to 0.503 at 65 to 75 cm and 136 to 176 cm, within reading error, with no clean "
+                        "crossing, and it compares two sessions, not one environment within a session",
+    "alexander2015_k4": "alpha against beta, the same route after the track moved to another room location, so "
+                        "not one environment; no r = 0.5 width (RSC 0.54 to 0.60 out to 150 cm, CA1 0.10 to 0.21)",
+    "alexander2017_k1": "rat RSC, odd against even trials on the 6.6 m plus-shaped lap; never below 0.71, so no "
+                        "r = 0.5 width",
+    "alexander2017_k3": "rat RSC, odd against even trials on the 3.83 m ring; the colour bar spans 0.7 to 1 and r "
+                        "stays at or above 0.83, so no r = 0.5 width",
+}
 KERNELS = {
     "Rat kernel": [
         # id, level, region, study, condition, lo, hi, status
@@ -429,6 +470,10 @@ KERNELS = {
         ("N08", "dorsal", "CA1", "gothard2001", "light, 1.76 m track", 27.4, 30, "figure-read"),  # 14; 13.7 mean, 15.0 median
         ("N09", "dorsal", "CA1", "gothard2001", "darkness, 1.76 m track", 23.8, 25.8, "figure-read"),  # 12; 11.9, 12.9
         ("N13", "dorsal", "CA1", "farooq2024", "juvenile, first exposure, 1 m track", 29, 31, "full text, figure-read"),  # 15; 14.5, 15.5
+        # From sweep_kernel_rsc.csv and audit_pft2.md. Both pool cells across rats; 2015 compares two
+        # sessions, 2017 uses Spearman with 7 cm smoothing and a colour bar clipped at 0.5.
+        ("alexander2015_k3", "dorsal", "CA1", "alexander2015", "between sessions, 2.15 m route", 52.8, 53, "full text, figure-read"),  # 26.5; 26.4
+        ("alexander2017_k2", "dorsal", "CA1", "alexander2017", "Spearman, 6.6 m lap", 120, 126, "full text, figure-read"),  # 60 to 63; 60.6 by tick labels
         ("K01", "dorsal", "CA3", "kjelstrup2008", "18 m track", 81, 81, "full text"),
         ("K09", "dorsal", "CA3", "green2022", "jump trials, 1.8 m track", 35.6, 36.8, "full text, figure-read"),  # 18.4; 17.8
         ("K11", "dorsal", "CA3", "wang2020", "2.07 m circular track", 39.6, 40, "full text, figure-read"),  # 20; 19.8
@@ -455,11 +500,14 @@ KERNEL_GROUPS = {
 KERNEL_SHORT = {"green2022": "Green 2022", "wang2020": "Wang 2020", "terrazas2005": "Terrazas 2005",
                 "ledergerber2021": "Ledergerber 2021", "gothard2001": "Gothard 2001",
                 "farooq2024": "Farooq 2024", "kjelstrup2008": "Kjelstrup 2008",
-                "resnik2012": "Resnik 2012", "raveau2018": "Raveau 2018", "mao2017": "Mao 2017"}
+                "resnik2012": "Resnik 2012", "raveau2018": "Raveau 2018", "mao2017": "Mao 2017",
+                "alexander2015": "Alexander & Nitz 2015", "alexander2017": "Alexander & Nitz 2017"}
 
 
 def kernel_rows(name):
-    known = {r["id"] for r in load("sweep_kernel.csv")}
+    known = {r["id"] for r in load("sweep_kernel.csv") + load("sweep_kernel_rsc.csv")}
+    assert all(rid in known for rid in KERNEL_EXCLUDE)
+    assert not any(row[0] in KERNEL_EXCLUDE for row in KERNELS[name])
     rows = []
     for rid, level, region, study, cond, lo, hi, status in KERNELS[name]:
         assert rid in known, rid
@@ -493,7 +541,8 @@ def report(species, rows, excluded, data, passed=(), show_species=False):
             how = f", {c['how']}" if c["how"] else ""
             env = c["env"].split(";")[0].split(" (")[0][:70]
             parts.append(f"{c['id']}: {fmt_cm(c['lo'], c['hi'])}, {env}{how}")
-        lines.append(f"| {row['label']} | {len(row['studies'])} | {fmt_cm(row['lo_cm'], row['hi_cm'])} | "
+        grid = " (rat grid)" if row.get("species") == "rat" else ""
+        lines.append(f"| {row['label']}{grid} | {len(row['studies'])} | {fmt_cm(row['lo_cm'], row['hi_cm'])} | "
                      + "; ".join(parts).replace("|", "/") + " |")
     lines += ["", f"### {species}: excluded rows", "", "| Row id | Region, level | Reason | Would belong to |",
               "|---|---|---|---|"]
@@ -522,6 +571,7 @@ def main():
     out_report = []
     keep = ("label", "lo_cm", "hi_cm", "studies", "group")
     extra = [(RSC, load("sweep_fields_rsc.csv")), (MEC, load("sweep_fields_mec_nongrid.csv"))]
+    extra_out = [(cfg, rows_x, *aggregate_extra(rows_x, cfg)) for cfg, rows_x in extra]
     for name, csv_name, species in (("Rat", "sweep_fields_rat.csv", "rat"),
                                     ("Mouse", "sweep_fields_mouse.csv", "mouse")):
         data = load(csv_name)
@@ -529,12 +579,13 @@ def main():
             data = data + [r for cfg, rows_x in extra for r in passed_ca1(rows_x, cfg)]
         rows, excluded = aggregate(data, species)
         out_report.append(report(name, rows, excluded, data))
-        if species == "mouse":
-            for cfg, rows_x in extra:
-                grows, gexcluded, gpassed = aggregate_extra(rows_x, cfg)
+        for cfg, rows_x, grows, gexcluded, gpassed in extra_out:
+            if species == "mouse":
                 out_report.append(report(cfg["group"], grows, gexcluded, rows_x, gpassed, show_species=True))
-                rows = rows + grows
+            rows = rows + [g for g in grows if g["species"] == species]
         spec[name]["rows"] = [{k: r[k] for k in keep if k in r} for r in rows]
+    kx = ["### Kernels: curves of sweep_kernel_rsc.csv left out by name", "", "| Row id | Reason |", "|---|---|"]
+    out_report.append("\n".join(kx + [f"| {rid} | {why} |" for rid, why in KERNEL_EXCLUDE.items()]) + "\n")
     for name, base in (("Rat kernel", "Rat"), ("Mouse kernel", "Mouse")):
         spec[name] = {"header": "Recording (kernel full width at 0.5)", "columns_from": base,
                       "rows": [{k: v for k, v in r.items() if k in keep} for r in kernel_rows(name)]}

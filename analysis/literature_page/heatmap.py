@@ -29,10 +29,10 @@ KINDS = {
                 "narrowest spacing. Each row pools every audited width for one region, long-axis "
                 "level and environment class, and names how many studies it holds; hover or focus a "
                 "cell to list them. Colour is the range's geometric midpoint on a log scale and "
-                "saturates beyond 0.1 and 10. Hippocampal rows run from dorsal to ventral, and the "
-                "mouse grid ends with retrosplenial and non-grid entorhinal rows under their own "
-                "headers. Fields grow with the environment and grids barely change, so compare "
-                "levels only within one environment class."),
+                "saturates beyond 0.1 and 10. Hippocampal rows run from dorsal to ventral. The mouse "
+                "grid ends with retrosplenial and non-grid entorhinal rows under their own headers, "
+                "and the rat grid with one non-grid entorhinal row. Fields grow with the environment "
+                "and grids barely change, so compare levels only within one environment class."),
         "link": "Sources, field rules and limits",
     },
     "kernel": {

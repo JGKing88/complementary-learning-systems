@@ -181,6 +181,15 @@
         "studies": [
           "Kjelstrup 2008"
         ]
+      },
+      {
+        "label": "MEC and nearby cortex, non-grid spatial cells, level unstated, real 1.5 m arena, 1 study",
+        "lo_cm": 39.5,
+        "hi_cm": 49.9,
+        "studies": [
+          "Butler 2019"
+        ],
+        "group": "MEC, non-grid cells"
       }
     ]
   },
@@ -204,7 +213,7 @@
     ],
     "rows": [
       {
-        "label": "Dorsal CA1, real environment up to 2 m, 18 studies",
+        "label": "Dorsal CA1, real environment up to 2 m, 19 studies",
         "lo_cm": 14.8,
         "hi_cm": 42.5,
         "studies": [
@@ -221,6 +230,7 @@
           "Jarzebowski 2022",
           "Keinath 2014",
           "Lenkey 2025",
+          "Mallory 2018",
           "Mao 2017",
           "Mou 2018",
           "Sloin 2022",
@@ -381,7 +391,7 @@
         "group": "Retrosplenial cortex"
       },
       {
-        "label": "Dorsal MEC non-grid spatial cells, real open arena of unstated size, 1 study",
+        "label": "Dorsal MEC non-grid spatial cells, real open arena of 70 to 100 cm, 1 study",
         "lo_cm": 56.1,
         "hi_cm": 56.1,
         "studies": [
@@ -390,7 +400,7 @@
         "group": "MEC, non-grid cells"
       },
       {
-        "label": "Dorsal MEC border cells, width perpendicular to the wall, real open arena of unstated size, 1 study",
+        "label": "Dorsal MEC border cells, width perpendicular to the wall, real open arena of 70 to 100 cm, 1 study",
         "lo_cm": 14.4,
         "hi_cm": 14.4,
         "studies": [
@@ -474,6 +484,22 @@
         "hi_cm": 31,
         "studies": [
           "Farooq 2024"
+        ]
+      },
+      {
+        "label": "Dorsal CA1, Alexander & Nitz 2015, between sessions, 2.15 m route",
+        "lo_cm": 52.8,
+        "hi_cm": 53,
+        "studies": [
+          "Alexander & Nitz 2015"
+        ]
+      },
+      {
+        "label": "Dorsal CA1, Alexander & Nitz 2017, Spearman, 6.6 m lap",
+        "lo_cm": 120,
+        "hi_cm": 126,
+        "studies": [
+          "Alexander & Nitz 2017"
         ]
       },
       {
