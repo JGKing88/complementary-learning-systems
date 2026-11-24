@@ -4,6 +4,11 @@ Two kinds of grid exist, told apart by the first header cell: "Recording (field 
 place-field width by a module's spacing, and "Recording (kernel full width at 0.5)" divides the full
 width at which population-vector correlation falls to 0.5. A trailing "Studies" column, if present,
 is not drawn as a cell; it feeds the tooltip.
+
+Rows are grouped under header rows. A markdown row whose first cell is "**name**" and whose other
+cells are empty starts an explicit group (e.g. "Retrosplenial cortex"), which holds every following
+row until the next such header. Rows before any explicit header are grouped by their leading
+Dorsal, Intermediate or Ventral, and that word is dropped from the row's label.
 """
 import html
 import math
@@ -19,14 +24,15 @@ KINDS = {
         "title": "Place-field width against grid spacing",
         "corner": "field width",
         "ends": ("Field narrower than the grid spacing", "Field wider"),
-        "sub": ("Each cell divides a hippocampal place-field width by one entorhinal grid module's "
-                "spacing, as a range from the narrowest field over the widest spacing to the widest "
-                "field over the narrowest spacing. Each row pools every audited width for one region, "
-                "long-axis level and environment class, and names how many studies it holds; hover "
-                "or focus a cell to list them. Colour is the range's geometric midpoint on a log "
-                "scale and saturates beyond 0.1 and 10. Rows run from dorsal to ventral. Fields grow "
-                "with the environment and grids barely change, so compare levels only within one "
-                "environment class."),
+        "sub": ("Each cell divides a place-field width by one entorhinal grid module's spacing, as a "
+                "range from the narrowest field over the widest spacing to the widest field over the "
+                "narrowest spacing. Each row pools every audited width for one region, long-axis "
+                "level and environment class, and names how many studies it holds; hover or focus a "
+                "cell to list them. Colour is the range's geometric midpoint on a log scale and "
+                "saturates beyond 0.1 and 10. Hippocampal rows run from dorsal to ventral, and the "
+                "mouse grid ends with retrosplenial and non-grid entorhinal rows under their own "
+                "headers. Fields grow with the environment and grids barely change, so compare "
+                "levels only within one environment class."),
         "link": "Sources, field rules and limits",
     },
     "kernel": {
@@ -34,12 +40,12 @@ KINDS = {
         "title": "Population similarity width against grid spacing",
         "corner": "kernel full width at r = 0.5",
         "ends": ("Kernel narrower than the grid spacing", "Kernel wider"),
-        "sub": ("Each cell divides the full width at which hippocampal population-vector "
-                "correlation falls to 0.5, both sides of a position, by one grid module's spacing. "
-                "Each row is one study, region, level and condition. The colour scale is the same "
-                "as above. No study measured a hippocampal kernel and grid spacing in the same "
-                "animals, so every cell pairs different animals, and species without a measured "
-                "grid spacing are left out."),
+        "sub": ("Each cell divides the full width at which population-vector correlation falls to "
+                "0.5, both sides of a position, by one grid module's spacing. Each row is one study, "
+                "region, level and condition; the mouse grid ends with a retrosplenial row. The "
+                "colour scale is the same as above. No study measured a kernel and grid spacing in "
+                "the same animals, so every cell pairs different animals, and species without a "
+                "measured grid spacing are left out."),
         "link": "Sources, measures and limits",
     },
 }
@@ -65,20 +71,36 @@ def split_label(text):
     return (m.group(1), m.group(2)) if m else (text.strip(), "")
 
 
+def group_header(cells):
+    """'**Retrosplenial cortex**' with every other cell empty -> 'Retrosplenial cortex'; else None."""
+    m = re.fullmatch(r"\*\*(.+)\*\*", cells[0])
+    return m.group(1).strip() if m and not any(cells[1:]) else None
+
+
 def parse(lines, species):
     rows = [[c.strip() for c in ln.strip().strip("|").split("|")] for ln in lines]
     head, body = rows[0], rows[2:]
     has_studies = head[-1] == "Studies"
     ncol = len(head) - 1 - has_studies
     cols = [split_label(h) for h in head[1:1 + ncol]]
-    out = []
+    out, explicit = [], None
     for r in body:
+        g = group_header(r)
+        if g:
+            explicit = g
+            continue
         label, width = split_label(r[0])
+        first = label.split(" ", 1)[0]
+        if explicit:
+            group, strip = explicit, False
+        else:
+            group, strip = (first, True) if first in LEVELS else (None, False)
         cells = []
         for (clab, cspan), c in zip(cols, r[1:1 + ncol]):
             cells.append({"text": c, "range": split_range(c), "col": clab, "col_span": cspan})
         studies = [s.strip() for s in r[-1].split(";") if s.strip()] if has_studies else []
-        out.append({"label": label, "width": width, "cells": cells, "studies": studies})
+        out.append({"label": label, "width": width, "cells": cells, "studies": studies,
+                    "group": group, "strip_group": strip})
     return {"species": species, "kind": kind_of(head[0]), "cols": cols, "rows": out}
 
 
@@ -112,19 +134,18 @@ def table_html(grid):
     e = html.escape
     ncol = len(grid["cols"]) + 1
     corner = KINDS[grid["kind"]]["corner"]
-    head = [f'<th class="hm-corner" scope="col">Hippocampal recording<span>{e(corner)}</span></th>']
+    head = [f'<th class="hm-corner" scope="col">Recording<span>{e(corner)}</span></th>']
     for lab, sp in grid["cols"]:
         head.append(f'<th scope="col">{e(lab)}<span>{e(sp)}</span></th>')
-    body, level = [], None
+    body, current = [], None
     for row in grid["rows"]:
-        first = row["label"].split(" ", 1)[0]
-        lvl = first if first in LEVELS else None
-        if lvl and lvl != level:
-            body.append(f'<tr class="hm-group"><th scope="rowgroup" colspan="{ncol}">{e(lvl)}</th></tr>')
-            level = lvl
+        group = row["group"]
+        if group and group != current:
+            body.append(f'<tr class="hm-group"><th scope="rowgroup" colspan="{ncol}">{e(group)}</th></tr>')
+        current = group
         region, _, env = row["label"].partition(", ")
-        if lvl:
-            region = region[len(lvl):].strip() or region
+        if row["strip_group"]:
+            region = region[len(group):].strip() or region
         rh = (f'<th scope="row"><b>{e(region)}</b>'
               f'<span>{e(env)}</span><span class="w">{e(row["width"])}</span></th>')
         body.append("<tr>" + rh + "".join(_cell(row, c) for c in row["cells"]) + "</tr>")

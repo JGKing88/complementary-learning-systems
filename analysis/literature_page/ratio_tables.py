@@ -9,7 +9,9 @@ A cell spans (row lo / column hi) to (row hi / column lo), so it carries the
 uncertainty of both ranges. A single value has lo == hi. "header" sets the first header
 cell (default "Recording (field width)"), "columns_from" reuses another entry's columns, and
 an optional per-row "studies" list adds a final Studies column, which the page turns into
-the heat-map tooltip.
+the heat-map tooltip. An optional per-row "group" (e.g. "Retrosplenial cortex") prints a
+header row, "| **group** | | ... |", before the first row of each run of that group; rows
+without a group are grouped on the page by their leading Dorsal, Intermediate or Ventral.
 """
 import json
 import sys
@@ -49,7 +51,11 @@ def table(spec, cols):
     head = f"| {spec.get('header', 'Recording (field width)')} | " + " | ".join(
         f"{c['label']} ({shown(c)})" for c in cols) + (" | Studies" if studies else "") + " |"
     lines = [head, "|---" * (len(cols) + 1 + studies) + "|"]
+    group = None
     for r in rows:
+        if r.get("group") and r["group"] != group:
+            lines.append(f"| **{r['group']}** |" + " |" * (len(cols) + studies))
+        group = r.get("group")
         cells = []
         for c in cols:
             only = c.get("only_rows_containing")

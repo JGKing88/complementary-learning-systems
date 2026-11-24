@@ -93,9 +93,9 @@ The rules differ: a 20% edge, a 50% edge, and a first-to-last event span. Compar
 - Mao 2017 subregion shares: superficial dysgranular 15 ± 3%, superficial granular 15 ± 1%, deep layers 6 ± 2%.
 - Rat shares: 23.0% granular place cells on a plus maze, against 38.3% in CA1 (Smith 2012). RSC rose from 8.9% before training to 28.0% at asymptote. 45% of RSC cells were position-tuned by an L-N model, against 85% in CA1 (Subramanian 2024).
 - Fields per place cell from count distributions:
-  - Mao 2017, 1.5 m belt: RSC 0.555, 0.336 and 0.106 of place cells had 1, 2 and 3 fields, a mean of about 1.55. CA1 had 0.752, 0.223 and 0.020, a mean of about 1.27. Per metre that is about 1.03 against 0.85 fields per place cell (derived).
-  - Mao 2017 subregion means: 1.49 superficial dysgranular, 1.45 deep, 1.17 superficial granular.
-  - Esteves 2023, sham mice on a familiar 1.5 m belt: 0.79, 0.21 and 0.006, a mean of 1.22, or 0.81 per metre (derived).
+  - Mao 2017, 1.5 m belt: RSC 0.555, 0.336 and 0.106 of place cells had 1, 2 and 3 fields, a mean of about 1.55. CA1 had 0.752, 0.223 and 0.020, a mean of about 1.26 (not different from RSC, P = 0.21). Per metre that is about 1.03 against 0.85 fields per place cell (derived).
+  - Mao 2017 subregion means: 1.49 superficial dysgranular, 1.45 deep, 1.21 superficial granular (the bars sum to 0.966; corrected by the audit).
+  - Esteves 2023, sham mice on a familiar 1.5 m belt: 0.79, 0.20 and 0.006, a mean of 1.21, or 0.81 per metre (derived; corrected by the audit).
   - Navratilova 2026: 0.093 fields per cell per metre over all imaged cells (CA1 0.146). Divided by the 27% share, that is about 0.34 fields per place cell per metre, or 1.1 to 1.7 fields per place cell on its 3.1 to 5.0 m tracks (derived, rough). In Fig. S2A about 18% of familiar place cells had two or more fields. Fields per cell per metre fell to 63% of the familiar value in a novel environment, against 55% in CA1.
 - Field counts against environment size: no study varied size and counted fields. Across studies, real 1.5 m belts give about 0.8 to 1.0 fields per place cell per metre. The 3 to 5 m VR tracks give about 0.34. That gap mixes track length with VR and with the rule. Navratilova 2026 had 3.14 m and 5.03 m versions but did not compare them. Sun et al. 2024 (J Physiol) imaged RSC in two open fields of different sizes, but it could not be opened.
 
@@ -169,7 +169,7 @@ No usable RSC spatial numbers:
 
 | Study | Match | Width | Share | Other |
 |---|---|---|---|---|
-| Mao 2017 | mouse 2p, same treadmill, same rule | 39.6 vs 37.0 cm mean (1.07); 34.5 vs 31.5 cm median (1.10) | 13% vs 26% imaging (0.50) | Fields per place cell 1.55 vs 1.27 (1.22). Kernel r = 0.5 at 13.2 vs 13.4 cm (0.99); zero at 37.8 vs 33.0 cm (1.15) |
+| Mao 2017 | mouse 2p, same treadmill, same rule | 39.6 vs 37.0 cm mean (1.07); 34.5 vs 31.5 cm median (1.10) | 13% vs 26% imaging (0.50) | Fields per place cell 1.55 vs 1.26 (1.23; not different, P = 0.21). Kernel r = 0.5 at 13.2 vs 13.4 cm (0.99); zero at 37.8 vs 33.0 cm (1.15) |
 | Lenkey 2025 | mouse 2p, same wheel in darkness, same rule, Thy1 | 37.31 vs 37.31 cm median (1.00) | RSC 20.5% (CA1 share in the mouse sweep) | CA1 amplitude slightly higher |
 | Navratilova 2026 | mouse 2p, same VR rooms, same rule; RSC mostly CaMK2a-tTA, CA1 Thy1 | about 40 vs 31 cm familiar (1.30), 38 vs 32 cm novel (1.19); none with the line matched | 27.0% vs 39.7% familiar (0.68); 19.1% vs 28.1% novel | Fields per cell per metre 0.093 vs 0.146 (0.64). SI 0.71 vs 0.83. Decoder error 18.9 vs 14.5 cm. Backward shift in 8% vs about 20% of fields |
 | Smith 2012 | rat, same rats, simultaneous, same rule, plus maze | area 1031 vs 368 cm² (2.80); diameter 36.2 vs 21.7 cm (1.67) | 23.0% vs 38.3% (0.60) | In-field/out-of-field rate 8.9 vs 50.3 |

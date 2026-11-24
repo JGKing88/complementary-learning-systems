@@ -243,13 +243,14 @@
         ]
       },
       {
-        "label": "Dorsal CA1, large virtual track over 3 m, 3 studies",
-        "lo_cm": 45.0,
+        "label": "Dorsal CA1, large virtual track over 3 m, 4 studies",
+        "lo_cm": 30.9,
         "hi_cm": 46.4,
         "studies": [
           "Hainmueller 2018",
           "Lee 2020",
-          "Sumegi 2025"
+          "Sumegi 2025",
+          "Navratilova 2026"
         ]
       },
       {
@@ -340,6 +341,62 @@
         "studies": [
           "Keinath 2014"
         ]
+      },
+      {
+        "label": "Dysgranular RSC, real environment up to 2 m, 3 studies",
+        "lo_cm": 25.0,
+        "hi_cm": 39.6,
+        "studies": [
+          "Mao 2017",
+          "Mao 2018",
+          "Lenkey 2025"
+        ],
+        "group": "Retrosplenial cortex"
+      },
+      {
+        "label": "Dysgranular RSC, large virtual track over 3 m, 1 study",
+        "lo_cm": 38.1,
+        "hi_cm": 40.2,
+        "studies": [
+          "Navratilova 2026"
+        ],
+        "group": "Retrosplenial cortex"
+      },
+      {
+        "label": "Granular RSC, real environment up to 2 m, 1 study",
+        "lo_cm": 49.5,
+        "hi_cm": 49.5,
+        "studies": [
+          "Mao 2017"
+        ],
+        "group": "Retrosplenial cortex"
+      },
+      {
+        "label": "RSC deep layers, real environment up to 2 m, 1 study",
+        "lo_cm": 48.0,
+        "hi_cm": 48.0,
+        "studies": [
+          "Mao 2017"
+        ],
+        "group": "Retrosplenial cortex"
+      },
+      {
+        "label": "Dorsal MEC non-grid spatial cells, real open arena of unstated size, 1 study",
+        "lo_cm": 56.1,
+        "hi_cm": 56.1,
+        "studies": [
+          "Mallory 2018"
+        ],
+        "group": "MEC, non-grid cells"
+      },
+      {
+        "label": "Dorsal MEC border cells, width perpendicular to the wall, real open arena of unstated size, 1 study",
+        "lo_cm": 14.4,
+        "hi_cm": 14.4,
+        "studies": [
+          "Mallory 2018"
+        ],
+        "group": "MEC, non-grid cells"
       }
     ]
   },
@@ -512,6 +569,23 @@
         "studies": [
           "Raveau 2018"
         ]
+      },
+      {
+        "label": "Dorsal CA1, Mao 2017, 1.5 m treadmill loop",
+        "lo_cm": 26.8,
+        "hi_cm": 26.8,
+        "studies": [
+          "Mao 2017"
+        ]
+      },
+      {
+        "label": "Dysgranular RSC, Mao 2017, 1.5 m treadmill loop",
+        "lo_cm": 26.4,
+        "hi_cm": 26.5,
+        "studies": [
+          "Mao 2017"
+        ],
+        "group": "Retrosplenial cortex"
       }
     ]
   }

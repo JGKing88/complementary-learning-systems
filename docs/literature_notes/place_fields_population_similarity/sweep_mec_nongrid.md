@@ -145,7 +145,7 @@ So whether non-grid field size scales along the axis is open. The one manipulati
 
 - Brun 2008, re-verified against the PDF text (pp. 1207 to 1208): "The mean half-width was 32 cm in the dorsal group, 47 cm in the intermediate group, and 67 cm in the ventral group." Widths at r = 0.20 were 54, 102 and 184 cm. The earlier audit read these half-widths as full widths from the Fig. 5 raster, so dist_r05 is 16, 23.5 and 33.5 cm. All 143 track cells were grid cells (55, 59 and 29 per group, from 9, 6 and 4 rats). Rows MK01 to MK03 match `sweep_kernel.csv` K04 to K06.
 - I found no within-environment kernel for non-grid MEC cells or for all MEC cells.
-- Correction to the existing kernel table: `sweep_kernel.csv` row K26 (Dasbehera, Dogra and Redman 2025, arXiv 2511.08292) says Neuropixels reanalysis of mouse MEC. The abstract and full text describe theory and simulated noisy grid cells. The only real data is behavioural (Tennant et al. 2018 stopping errors). K26 is not a neural kernel and should leave the kernel table. I did not edit that file.
+- Superseded by the audit (audit_sweep_mec.md): this sweep proposed dropping K26 (Dasbehera, Dogra and Redman 2025, arXiv 2511.08292) as simulation only. Its v2 reanalyses public Neuropixels recordings from Campbell et al. 2021, so K26 stays, with the audit's corrections.
 
 ### Between-session and other comparisons that are not kernels
 
@@ -160,7 +160,7 @@ So whether non-grid field size scales along the axis is open. The one manipulati
 | Mallory 2018 Supp. Fig. 11b | field width from PV cross-correlation | CA1 place cells, not MEC |
 | Gardner 2022 | toroidal manifold of grid modules | no position kernel |
 | Hardcastle 2017, Butler 2019 | position decoding error | decoding, not similarity against distance |
-| Dasbehera 2025 | decorrelation against distance | simulation only |
+| Dasbehera 2025 | decorrelation against distance | v2 reanalyses real Neuropixels data (Campbell 2021); see audit_sweep_mec.md |
 
 ## Excluded items
 

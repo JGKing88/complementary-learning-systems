@@ -5,11 +5,13 @@
 Field-width rows ("Rat", "Mouse") come from sweep_fields_rat.csv and sweep_fields_mouse.csv:
 one row per region x long-axis level x environment class. A row's range runs from the smallest
 to the largest contributing value, and its "studies" field lists the contributing studies.
-Kernel rows ("Rat kernel", "Mouse kernel") come from sweep_kernel.csv and its audit: one row per
-study x region x level x condition, as the full width at which population-vector correlation
-falls to 0.5. Both kinds keep the existing columns. Every per-row decision (exclusion, value
-substitution, environment class) is written out below with its reason, and --report prints the
-exclusion and contribution tables used in the notes.
+The mouse grid also takes rows from sweep_fields_rsc.csv and sweep_fields_mec_nongrid.csv, one
+per region x environment class, each carrying a "group" ("Retrosplenial cortex" or "MEC, non-grid
+cells") that the heat map prints as a header. Kernel rows ("Rat kernel", "Mouse kernel") come
+from sweep_kernel.csv and its audits: one row per study x region x level x condition, as the full
+width at which population-vector correlation falls to 0.5. Both kinds keep the existing columns.
+Every per-row decision (exclusion, value substitution, environment class) is written out below
+with its reason, and --report prints the exclusion and contribution tables used in the notes.
 """
 import csv
 import json
@@ -30,6 +32,19 @@ SHORT = {"leesm2022": "Lee SM 2022", "abadperez2025": "Abad-Perez 2025",
 
 def study_of(row_id):
     return row_id.rsplit("_", 1)[0]
+
+
+def study_key(r):
+    """'mao2017_rsc_1' -> 'mao2017'; ids without a study prefix (MNG01) use the citation."""
+    m = re.match(r"([a-z]+\d{4})_", r["id"])
+    if m:
+        return m.group(1)
+    m = re.match(r"([A-Za-z]+)\b.*?\((\d{4})\)", r["citation"])
+    return f"{m.group(1).lower()}{m.group(2)}"
+
+
+def is_virtual(env_type):
+    return env_type == "VR track" or "virtual" in env_type.lower()
 
 
 def short(study):
@@ -259,7 +274,7 @@ def aggregate(rows, species):
             env = "large real 18 m track"
         elif cls == "large" and species == "rat" and all(c["env_type"] == "linear track" for c in contrib):
             env = "large real track over 3 m"
-        elif cls == "large" and species == "mouse" and all(c["env_type"] == "VR track" for c in contrib):
+        elif cls == "large" and species == "mouse" and all(is_virtual(c["env_type"]) for c in contrib):
             env = "large virtual track over 3 m"
         label = f"{level.capitalize()} {region}, {env}, {n} {'study' if n == 1 else 'studies'}"
         out.append({"key": key, "label": label, "lo_cm": min(c["lo"] for c in contrib),
@@ -268,16 +283,140 @@ def aggregate(rows, species):
     return out, excluded
 
 
+# ---------------------------------------------------------------- retrosplenial and non-grid MEC widths
+
+# Both sweeps add mouse rows under their own group headers, one row per region x environment
+# class, with the deduplication rules above. The retrosplenial sweep also holds CA1 comparison
+# rows: two repeat rows of sweep_fields_mouse.csv and are dropped; a new mouse CA1 width
+# (navratilova2026_4) joins the hippocampal mouse rows. No rat row survives: the only rat width
+# (Smith 2012) has no environment size.
+GROUP_RSC, GROUP_MEC = "Retrosplenial cortex", "MEC, non-grid cells"
+EXTRA_CLASS_LABEL = dict(MOUSE_CLASS_LABEL, unstated="real open arena of unstated size")
+NO_WIDTH = "no width in cm (counts, fractions, ratios, angles or stability only)"
+
+RSC = {
+    "group": GROUP_RSC,
+    "exclude": {
+        "mao2017_ca1_1": "same CA1 cells as mao2017_1 in sweep_fields_mouse.csv, which the CA1 row already uses",
+        "lenkey2025_3": "same CA1 cells as lenkey2025_1 in sweep_fields_mouse.csv, which the CA1 row already uses",
+        "mao2017_rsc_3": "superficial dysgranular cells from 3 of the same 4 WT mice as mao2017_rsc_1 and _2, "
+                         "same statistic as _2; the pooled rows are used",
+        "mao2018_2": "after bilateral hippocampal lesions, a manipulation; the sham row mao2018_1 is used",
+        "navratilova2026_3": "the cells of navratilova2026_1 split by mouse line (Thy1 29 cm, CaMK2a-tTA 38 cm); "
+                             "the pooled rows are used and the text gives the split",
+        "park2024_1": "vertex-cell fields at polygon corners, not place-like fields; area approximate "
+                      "(about 80 cm²) in a 25 cm radius chamber",
+        "smith2012_1": "rat; plus-maze size not stated, so no environment class, and an equal-area diameter "
+                       "on narrow arms understates the length along an arm (as diamantaki2016 cell 104)",
+        "smith2012_2": "rat CA1 comparison row for smith2012_1; plus-maze size not stated, so no environment class",
+        "subramanian2024_3": "sparsity index (the share of the box where a cell fires), not a field width",
+        "alexander2020_4": "egocentric boundary cells' preferred distance to a wall, not a field width; the "
+                           "histogram's distance axis is uncertain",
+        "vanwijngaarden2020_2": "border cells' preferred distance from the wall (peak at 5 cm), not a field width",
+        "lozano2017_1": "head-direction tuning width in degrees, not a spatial width",
+        "zhang2022_4": "head-direction tuning width in degrees, definition not stated",
+    },
+    # Where an excluded width would have gone: (region, level, class); None means no row exists.
+    "attach": {
+        "mao2017_ca1_1": ("CA1", "dorsal", "real"), "lenkey2025_3": ("CA1", "dorsal", "real"),
+        "mao2017_rsc_3": ("Dysgranular RSC", "", "real"), "mao2018_2": ("Dysgranular RSC", "", "real"),
+        "navratilova2026_3": ("Dysgranular RSC", "", "large"), "park2024_1": None,
+        "smith2012_1": None, "smith2012_2": None, "subramanian2024_3": None, "alexander2020_4": None,
+        "vanwijngaarden2020_2": None, "lozano2017_1": None, "zhang2022_4": None,
+    },
+    "region": {"RSC-dysgranular": "Dysgranular RSC", "RSC-granular": "Granular RSC",
+               "RSC-unspecified": "RSC, subregion not stated"},
+    "region_id": {"mao2017_rsc_4": "RSC deep layers"},
+    "region_order": ["Dysgranular RSC", "Granular RSC", "RSC deep layers", "RSC, subregion not stated"],
+    "class": {},
+}
+MEC = {
+    "group": GROUP_MEC,
+    "exclude": {
+        "MNG03": "HCN1 knockout mice, a genetic model; the wild-type littermates (MNG01) are used",
+        "MNG05": "grid cells, and the size is the central peak of the spatial autocorrelogram, not a rate-map field",
+        "MNG02": "share of the box covered by the cell's fields (43%), not a field width",
+        "MNG24": "share of a virtual track inside cue-cell fields under a lenient p < 0.3 rule, not a width",
+        "MNG29": "distance from the wall to the field centre (8.2 cm), not a width; unclear whether it covers "
+                 "6 or 20 cells",
+    },
+    "attach": {"MNG03": ("Dorsal MEC non-grid spatial cells", "", "unstated"), "MNG05": None,
+               "MNG02": None, "MNG24": None, "MNG29": None},
+    "region": {},
+    # Border width is the field's extent perpendicular to the wall, so it gets its own labelled row.
+    "region_id": {"MNG01": "Dorsal MEC non-grid spatial cells",
+                  "MNG04": "Dorsal MEC border cells, width perpendicular to the wall"},
+    "region_order": ["Dorsal MEC non-grid spatial cells", "Dorsal MEC border cells, width perpendicular to the wall"],
+    # Mallory 2018 gives no arena size in the accessible text (it is in the paywalled Online
+    # Methods). The rows stay, unlike mallory2018_1 in the mouse sweep, because they are the only
+    # non-grid widths and the grid spacing that forms M1's high end comes from the same mice.
+    "class": {"MNG01": "unstated", "MNG04": "unstated"},
+}
+
+
+def passed_ca1(rows, cfg):
+    """Mouse CA1 widths in a group sweep that are not duplicates: they join the hippocampal rows."""
+    return [r for r in rows if r["species"] == "mouse" and r["region"] == "CA1"
+            and r["id"] not in cfg["exclude"] and num_range(r["width_cm"]) is not None]
+
+
+def aggregate_extra(rows, cfg):
+    groups, excluded, passed = OrderedDict(), [], []
+    for r in rows:
+        rid = r["id"]
+        if rid in cfg["exclude"]:
+            excluded.append((rid, cfg["exclude"][rid], cfg["attach"].get(rid)))
+            continue
+        width = num_range(r["width_cm"])
+        if width is None:
+            excluded.append((rid, NO_WIDTH, None))
+            continue
+        if r["species"] != "mouse":
+            raise ValueError(f"{rid}: only mouse rows have a group in the grids")
+        if r["region"] == "CA1":
+            passed.append(rid)
+            continue
+        region = cfg["region_id"].get(rid) or cfg["region"][r["region"]]
+        cls = cfg["class"].get(rid) or mouse_class(r)
+        groups.setdefault((region, cls), []).append({
+            "id": rid, "study": study_key(r), "lo": width[0], "hi": width[1], "how": "",
+            "env": r["environment_size"], "env_type": r["environment_type"],
+            "length": first_num(r["env_length_m"]), "area": first_num(r["env_area_m2"]),
+            "tag": tag(r["status"]), "doi": doi_url(r["doi_or_url"])})
+    out, class_order = [], list(EXTRA_CLASS_LABEL)
+    for key in sorted(groups, key=lambda k: (cfg["region_order"].index(k[0]), class_order.index(k[1]))):
+        region, cls = key
+        contrib = groups[key]
+        studies = list(OrderedDict.fromkeys(c["study"] for c in contrib))
+        n = len(studies)
+        env = EXTRA_CLASS_LABEL[cls]
+        if cls == "large" and all(is_virtual(c["env_type"]) for c in contrib):
+            env = "large virtual track over 3 m"
+        out.append({"key": key, "label": f"{region}, {env}, {n} {'study' if n == 1 else 'studies'}",
+                    "lo_cm": min(c["lo"] for c in contrib), "hi_cm": max(c["hi"] for c in contrib),
+                    "studies": [short(s) for s in studies], "contrib": contrib, "group": cfg["group"]})
+    return out, excluded, passed
+
+
 # ---------------------------------------------------------------- kernels
 
 # One row per study x region x level x condition. Full width at r = 0.5 is twice the one-sided
 # distance. Where the sweep and the audit read a figure differently, the row spans both readings
 # (one-sided readings in the comment, sweep first). Kjelstrup and Resnik widths are printed values.
-# Left out: MEC grid-cell kernels (Brun, K04 to K06; not hippocampal), rows without a width
-# (K12, K13, K16 to K18, K23 to K26, N14, N15, N18, N19), species without measured grid spacing
-# (marmoset N05 to N07, bird N12, human K24, K25, N18), genetic models (N02 GluA1 knockout,
-# N04 Dp(16)1Yey), a drug session (N17 scopolamine), passive transport (K15 car driving) and the
-# cross-half design whose diagonal is 0.58 (N16 Blair), where r = 0.5 is not half the peak.
+# Left out: MEC grid-cell kernels (Brun, K04 to K06; grid cells, not hippocampal or non-grid; the
+# same curves are MK01 to MK03 in sweep_kernel_mec.csv), rows without a width (K12, K13, K18,
+# K23 to K26, N14, N15, N18, N19), species without measured grid spacing (marmoset N05 to N07,
+# bird N12, human K24, K25, N18), genetic models (N02 GluA1 knockout, N04 Dp(16)1Yey), a drug
+# session (N17 scopolamine), passive transport (K15 car driving) and the cross-half design whose
+# diagonal is 0.58 (N16 Blair), where r = 0.5 is not half the peak.
+# Mao 2017 (K16 RSC, K17 CA1) holds the audited retrosplenial values; K-mao2017_1 and _2 in
+# sweep_kernel_rsc.csv are the same curves and do not enter. Also left out from that file:
+# K-mao2017_3 to _5 (layer and subregion subsets, 123, 60 and 30 cells from 3 of the same 4 mice;
+# r = 0.5 at 13.3 to 14.1 cm, within 1 cm of K16), K-mao2017_6 and _7 (Thy1 example matrices read
+# by colour-bar lookup, cell counts unclear; _7 removes the belt cues), fischer2020_k1 and _k2
+# (split-half correlation peaking at 0.76 to 0.82, so r = 0.5 is not half the peak, as N16; the
+# width also changes along the track and is narrowest at the landmark), and alexander2017_k1 and
+# miller2019_k1 (no width).
 KERNELS = {
     "Rat kernel": [
         # id, level, region, study, condition, lo, hi, status
@@ -303,12 +442,20 @@ KERNELS = {
     "Mouse kernel": [
         ("N01", "dorsal", "CA1", "resnik2012", "1.4 m track", 18, 18, "full text, figure-read"),  # text 9.0
         ("N03", "dorsal", "CA1", "raveau2018", "1.7 m track, Spearman", 26.4, 27, "full text, figure-read"),  # 13.5; 13.3 and 13.1
+        ("K17", "dorsal", "CA1", "mao2017", "1.5 m treadmill loop", 26.8, 26.8, "full text, figure-read"),  # 13.4; 13.39
+    ],
+}
+# Rows under a group header, after the hippocampal rows: group, id, region, study, condition, lo, hi, status.
+KERNEL_GROUPS = {
+    "Rat kernel": [],
+    "Mouse kernel": [
+        (GROUP_RSC, "K16", "Dysgranular RSC", "mao2017", "1.5 m treadmill loop", 26.4, 26.5, "full text, figure-read"),  # 13.2; 13.25
     ],
 }
 KERNEL_SHORT = {"green2022": "Green 2022", "wang2020": "Wang 2020", "terrazas2005": "Terrazas 2005",
                 "ledergerber2021": "Ledergerber 2021", "gothard2001": "Gothard 2001",
                 "farooq2024": "Farooq 2024", "kjelstrup2008": "Kjelstrup 2008",
-                "resnik2012": "Resnik 2012", "raveau2018": "Raveau 2018"}
+                "resnik2012": "Resnik 2012", "raveau2018": "Raveau 2018", "mao2017": "Mao 2017"}
 
 
 def kernel_rows(name):
@@ -319,6 +466,10 @@ def kernel_rows(name):
         rows.append({"label": f"{level.capitalize()} {region}, {KERNEL_SHORT[study]}, {cond}",
                      "lo_cm": lo, "hi_cm": hi, "studies": [KERNEL_SHORT[study]],
                      "source": rid, "status": status})
+    for group, rid, region, study, cond, lo, hi, status in KERNEL_GROUPS[name]:
+        assert rid in known, rid
+        rows.append({"label": f"{region}, {KERNEL_SHORT[study]}, {cond}", "lo_cm": lo, "hi_cm": hi,
+                     "studies": [KERNEL_SHORT[study]], "group": group, "source": rid, "status": status})
     return rows
 
 
@@ -330,10 +481,12 @@ def fmt_cm(lo, hi):
     return f"{f(lo)} cm" if lo == hi else f"{f(lo)} to {f(hi)} cm"
 
 
-def report(species, rows, excluded, data):
+def report(species, rows, excluded, data, passed=(), show_species=False):
     by_id = {r["id"]: r for r in data}
     lines = [f"### {species}: rows and contributions", "",
              "| Row | N | Range | Contributions (row id: value, environment, how) |", "|---|---|---|---|"]
+    if not rows:
+        lines.append("| No row | 0 | | |")
     for row in rows:
         parts = []
         for c in row["contrib"]:
@@ -346,8 +499,14 @@ def report(species, rows, excluded, data):
               "|---|---|---|---|"]
     for rid, why, att in excluded:
         r = by_id[rid]
-        where = "no row" if att is None else f"{att[1]} {att[0]}, {att[2]}"
-        lines.append(f"| {rid} | {r['region']}, {r['level']} | {why} | {where} |")
+        where = "no row" if att is None else " ".join(x for x in (att[1], att[0]) if x) + f", {att[2]}"
+        where_from = f"{r['region'][:60]}, {r['level']}" + (f", {r['species']}" if show_species else "")
+        lines.append(f"| {rid} | {where_from} | {why} | {where} |")
+    if passed:
+        lines += ["", f"### {species}: CA1 rows passed to the hippocampal mouse rows", "",
+                  "| Row id | Width | Joins |", "|---|---|---|"]
+        for rid in passed:
+            lines.append(f"| {rid} | {by_id[rid]['width_cm']} cm | Dorsal CA1, by the mouse class rules |")
     return "\n".join(lines) + "\n"
 
 
@@ -361,17 +520,24 @@ def main():
     spec_path = Path(argv[0]) if argv else HERE / "ratio_spec.json"
     spec = json.load(open(spec_path, encoding="utf-8"))
     out_report = []
+    keep = ("label", "lo_cm", "hi_cm", "studies", "group")
+    extra = [(RSC, load("sweep_fields_rsc.csv")), (MEC, load("sweep_fields_mec_nongrid.csv"))]
     for name, csv_name, species in (("Rat", "sweep_fields_rat.csv", "rat"),
                                     ("Mouse", "sweep_fields_mouse.csv", "mouse")):
         data = load(csv_name)
+        if species == "mouse":
+            data = data + [r for cfg, rows_x in extra for r in passed_ca1(rows_x, cfg)]
         rows, excluded = aggregate(data, species)
-        spec[name]["rows"] = [{"label": r["label"], "lo_cm": r["lo_cm"], "hi_cm": r["hi_cm"],
-                               "studies": r["studies"]} for r in rows]
         out_report.append(report(name, rows, excluded, data))
+        if species == "mouse":
+            for cfg, rows_x in extra:
+                grows, gexcluded, gpassed = aggregate_extra(rows_x, cfg)
+                out_report.append(report(cfg["group"], grows, gexcluded, rows_x, gpassed, show_species=True))
+                rows = rows + grows
+        spec[name]["rows"] = [{k: r[k] for k in keep if k in r} for r in rows]
     for name, base in (("Rat kernel", "Rat"), ("Mouse kernel", "Mouse")):
         spec[name] = {"header": "Recording (kernel full width at 0.5)", "columns_from": base,
-                      "rows": [{k: v for k, v in r.items() if k in ("label", "lo_cm", "hi_cm", "studies")}
-                               for r in kernel_rows(name)]}
+                      "rows": [{k: v for k, v in r.items() if k in keep} for r in kernel_rows(name)]}
     with open(spec_path, "w", encoding="utf-8") as f:
         json.dump(spec, f, indent=2, ensure_ascii=False)
         f.write("\n")
