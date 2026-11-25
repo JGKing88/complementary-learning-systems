@@ -2561,8 +2561,8 @@ trains the other ideas can learn this kind of memory without a memory loss.
    agent: 0.55 to 0.65 revisit over all envs, the first goal kept through
    every block, against idea 1's 1.000 in 12.85 steps. More DAgger rounds
    move it by a few points either way. The peak is early: arm 6 gives 0.65
-   at u500, 0.60 at u750, 0.47 at u1000 and 0.43 at u2900, the level of the
-   frozen-memory searchers (arm 1 u3550 0.45, arm 2 u3750 0.42). Training
+   at u500, 0.60 at u750, 0.47 at u1000, 0.43 at u2900 and 0.48 at u3900,
+   the level of the searchers (finals 0.37 to 0.585). Training
    the controller longer on lifetimes of 3 to 6 arenas, where the memory
    holds only 2 to 3 goals, moves it back toward searching.
 
@@ -2581,10 +2581,22 @@ and their finals are jobs 30212112, 30212113 and 30212114.
 Finals at u4000 (2026-11-24), revisit over all envs, with u1000 and the
 live-env revisit steps: arm 1 0.46 (u1000 0.30; 90 steps), arm 2 0.38
 (0.45; 84), arm 3 0.37 (0.53; 81). 3000 more updates leave all three
-searching. Arm 2's last link and arm 6's three extra links were cut short
-(root cancelled two links on 11-23; arm 6 needs about 63 s per update in
-the 6-arena stage), so arm 2's final is job 30246966 and arm 6's is job
-30341120 after one more link; arm 5b's is job 30061600. Recordings are in
+searching. Arm 5b's final: 0.585 (u1000 0.45; 75 steps), the best of the
+PPO arms and still searching. Arm 6 never reached u4000 (root cancelled
+two extension links on 11-23 and its last link ran at 110 to 170 s per
+update); its last protocol run, at u3900, gives 0.48 (76 steps). The line
+was closed there on 2026-11-25 with no further runs.
+
+| arm | u1000 | final | final checkpoint |
+|---|---|---|---|
+| 1 frozen memory, idea 1's controller | 0.30 | 0.46 | u4000 |
+| 2 frozen memory, scratch controller | 0.45 | 0.38 | u4000 |
+| 3 memory and controller from scratch by PPO | 0.53 | 0.37 | u4000 |
+| 5b supervised memory at lr x 0.1, idea 1's controller | 0.45 | 0.585 | u4000 |
+| 6 DAgger memory, idea 1's controller | 0.47 (0.65 at u500) | 0.48 | u3900 |
+
+Revisit over all envs on the continual protocol; idea 1 is 1.000 in 12.85
+steps, and every final above takes 75 to 90 steps per revisit. Recordings are in
 `$CLS_RUNS/idea4/replay/rec_*`, DAgger memories in
 `$CLS_RUNS/idea4/replay/r*_*/memory.pt`.
 
